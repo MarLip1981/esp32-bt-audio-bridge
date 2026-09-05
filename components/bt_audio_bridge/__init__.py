@@ -14,6 +14,7 @@ from esphome.components.esp32 import (
 
 CONF_STATUS = "status"
 
+AUTO_LOAD = ["text_sensor"]
 DEPENDENCIES = ["wifi"]
 
 bt_audio_bridge_ns = cg.esphome_ns.namespace("bt_audio_bridge")
