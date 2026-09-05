@@ -2,6 +2,7 @@
 
 #include "esphome/core/log.h"
 
+#include <cstdio>
 #include <cstring>
 
 namespace esphome {
@@ -41,19 +42,11 @@ void BtAudioBridge::setup() {
   ESP_LOGI(TAG, "Starting Bluetooth A2DP Source");
 
   this->a2dp_source_.set_local_name("ESP32 BT Audio Bridge");
-
-  // Secure Simple Pairing
   this->a2dp_source_.set_ssp_enabled(true);
-
-  // Automatic reconnect
   this->a2dp_source_.set_auto_reconnect(true, 10);
-
-  // Bluetooth device discovery callbacks
   this->a2dp_source_.set_ssid_callback(bt_ssid_callback);
   this->a2dp_source_.set_discovery_mode_callback(bt_discovery_callback);
 
-  // Start Bluetooth A2DP Source.
-  // No device name is specified yet, so the bridge can perform discovery.
   this->a2dp_source_.start();
 
   this->connected_ = false;
@@ -91,12 +84,10 @@ void BtAudioBridge::loop() {
 
     if (this->a2dp_source_.is_discovery_active()) {
       this->scanning_ = true;
-      std::strncpy(
-          this->status_, "SCANNING", sizeof(this->status_) - 1);
+      std::strncpy(this->status_, "SCANNING", sizeof(this->status_) - 1);
     } else {
       this->scanning_ = false;
-      std::strncpy(
-          this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
+      std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
     }
   }
 }
@@ -124,19 +115,29 @@ void BtAudioBridge::start_scan() {
 }
 
 void BtAudioBridge::connect_to(const char *mac) {
-  if (mac == nullptr || strlen(mac) == 0) {
+  if (mac == nullptr || std::strlen(mac) == 0) {
     ESP_LOGW(TAG, "No Bluetooth MAC address specified");
     return;
   }
 
-  ESP_LOGI(TAG, "Requested connection to Bluetooth device: %s", mac);
+  unsigned int b[6];
+  if (std::sscanf(mac, "%02x:%02x:%02x:%02x:%02x:%02x",
+                  &b[0], &b[1], &b[2], &b[3], &b[4], &b[5]) != 6) {
+    ESP_LOGE(TAG, "Invalid Bluetooth MAC address: %s", mac);
+    return;
+  }
 
-  std::strncpy(
-      this->selected_mac_, mac, sizeof(this->selected_mac_) - 1);
+  esp_bd_addr_t address = {
+      static_cast<uint8_t>(b[0]), static_cast<uint8_t>(b[1]),
+      static_cast<uint8_t>(b[2]), static_cast<uint8_t>(b[3]),
+      static_cast<uint8_t>(b[4]), static_cast<uint8_t>(b[5])};
 
-  // Connection by MAC will be implemented in the next stage.
-  std::strncpy(
-      this->status_, "CONNECTING", sizeof(this->status_) - 1);
+  std::strncpy(this->selected_mac_, mac, sizeof(this->selected_mac_) - 1);
+  this->selected_mac_[sizeof(this->selected_mac_) - 1] = '\0';
+  std::strncpy(this->status_, "CONNECTING", sizeof(this->status_) - 1);
+
+  ESP_LOGI(TAG, "Connecting to Bluetooth device: %s", this->selected_mac_);
+  this->a2dp_source_.connect_to(address);
 }
 
 void BtAudioBridge::disconnect() {
@@ -147,8 +148,7 @@ void BtAudioBridge::disconnect() {
   this->connected_ = false;
   this->scanning_ = false;
 
-  std::strncpy(
-      this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
+  std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
 }
 
 bool BtAudioBridge::is_connected() {
