@@ -21,9 +21,8 @@ async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
 
-    # ESP32-A2DP jest biblioteką z GitHub,
-    # dlatego podajemy bezpośrednio repozytorium.
-    cg.add_library(
-        "https://github.com/pschatzmann/ESP32-A2DP.git",
-        None,
+    # ESP32-A2DP musi być pobrane bezpośrednio z GitHub.
+    cg.add_platformio_option(
+        "lib_deps",
+        ["https://github.com/pschatzmann/ESP32-A2DP.git"]
     )
