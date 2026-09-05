@@ -6,6 +6,7 @@
 #include <cstring>
 
 #ifdef USE_ARDUINO
+#include "esp32-hal-alloc-bt-classic-mem.h"
 extern "C" bool btInUse() { return true; }
 #endif
 
@@ -202,5 +203,5 @@ void BtAudioBridge::publish_status_() {
   }
 }
 
-}  // namespace bt_audio_bridge
 }  // namespace esphome
+}  // namespace bt_audio_bridge
