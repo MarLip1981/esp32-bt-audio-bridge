@@ -52,6 +52,7 @@ void BtAudioBridge::setup() {
   this->connected_ = false;
   this->scanning_ = false;
   std::strncpy(this->status_, "SCANNING", sizeof(this->status_) - 1);
+  this->publish_status_();
 
   ESP_LOGI(TAG, "Bluetooth A2DP Source started");
 }
@@ -90,6 +91,8 @@ void BtAudioBridge::loop() {
       std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
     }
   }
+
+  this->publish_status_();
 }
 
 void BtAudioBridge::dump_config() {
@@ -110,6 +113,7 @@ void BtAudioBridge::start_scan() {
 
   this->scanning_ = true;
   std::strncpy(this->status_, "SCANNING", sizeof(this->status_) - 1);
+  this->publish_status_();
 
   this->a2dp_source_.start();
 }
@@ -135,6 +139,7 @@ void BtAudioBridge::connect_to(const char *mac) {
   std::strncpy(this->selected_mac_, mac, sizeof(this->selected_mac_) - 1);
   this->selected_mac_[sizeof(this->selected_mac_) - 1] = '\0';
   std::strncpy(this->status_, "CONNECTING", sizeof(this->status_) - 1);
+  this->publish_status_();
 
   ESP_LOGI(TAG, "Connecting to Bluetooth device: %s", this->selected_mac_);
   this->a2dp_source_.connect_to(address);
@@ -149,6 +154,7 @@ void BtAudioBridge::disconnect() {
   this->scanning_ = false;
 
   std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
+  this->publish_status_();
 }
 
 bool BtAudioBridge::is_connected() {
@@ -157,6 +163,12 @@ bool BtAudioBridge::is_connected() {
 
 const char *BtAudioBridge::get_status() {
   return this->status_;
+}
+
+void BtAudioBridge::publish_status_() {
+  if (this->status_sensor_ != nullptr) {
+    this->status_sensor_->publish_state(this->status_);
+  }
 }
 
 }  // namespace bt_audio_bridge
