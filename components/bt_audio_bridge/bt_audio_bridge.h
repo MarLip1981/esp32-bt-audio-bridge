@@ -1,5 +1,6 @@
 #pragma once
 
+#include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
 
@@ -18,6 +19,10 @@ class BtAudioBridge : public Component {
     return setup_priority::AFTER_WIFI;
   }
 
+  void set_status_sensor(text_sensor::TextSensor *status_sensor) {
+    this->status_sensor_ = status_sensor;
+  }
+
   void start_scan();
   void connect_to(const char *mac);
   void disconnect();
@@ -26,7 +31,10 @@ class BtAudioBridge : public Component {
   const char *get_status();
 
  protected:
+  void publish_status_();
+
   BluetoothA2DPSource a2dp_source_;
+  text_sensor::TextSensor *status_sensor_{nullptr};
 
   bool connected_{false};
   bool scanning_{false};
