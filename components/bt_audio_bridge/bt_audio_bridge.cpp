@@ -5,6 +5,10 @@
 #include <cstdio>
 #include <cstring>
 
+#ifdef USE_ARDUINO
+extern "C" bool btInUse() { return true; }
+#endif
+
 namespace esphome {
 namespace bt_audio_bridge {
 
