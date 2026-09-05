@@ -21,9 +21,13 @@ static bool bt_ssid_callback(const char *ssid, esp_bd_addr_t address, int rrsi) 
     return true;
   }
 
-  ESP_LOGI(TAG, "BT device found: %s  RSSI: %d", ssid, rrsi);
+  char mac[18];
+  std::snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+                address[0], address[1], address[2], address[3], address[4], address[5]);
 
-  return true;
+  ESP_LOGI(TAG, "BT device found: %s  MAC: %s  RSSI: %d", ssid, mac, rrsi);
+
+  return false;
 }
 
 static void bt_discovery_callback(
@@ -43,21 +47,23 @@ static void bt_discovery_callback(
 void BtAudioBridge::setup() {
   global_bt_audio_bridge = this;
 
-  ESP_LOGI(TAG, "Starting Bluetooth A2DP Source");
+  ESP_LOGI(TAG, "Bluetooth A2DP Source ready");
 
-  // Do not start Classic Bluetooth during ESPHome setup. The previous
-  // immediate start crashed before the native API came online. A2DP is
-  // initialized only when an explicit scan or connection is requested.
   this->connected_ = false;
   this->scanning_ = false;
   this->a2dp_started_ = false;
+  this->scan_requested_ = false;
   std::strncpy(this->status_, "READY", sizeof(this->status_) - 1);
   this->publish_status_();
-
-  ESP_LOGI(TAG, "Bluetooth A2DP Source started");
 }
 
 void BtAudioBridge::loop() {
+  if (this->scan_requested_ && !this->a2dp_started_) {
+    this->scan_requested_ = false;
+    ESP_LOGI(TAG, "Starting Bluetooth A2DP stack from ESPHome loop");
+    this->start_a2dp_();
+  }
+
   const unsigned long now = millis();
 
   if (now - this->last_status_check_ < 1000) {
@@ -108,10 +114,10 @@ void BtAudioBridge::dump_config() {
 }
 
 void BtAudioBridge::start_scan() {
-  ESP_LOGI(TAG, "Starting Bluetooth discovery");
+  ESP_LOGI(TAG, "Bluetooth scan requested");
 
-  if (this->a2dp_started_ && this->a2dp_source_.is_discovery_active()) {
-    ESP_LOGI(TAG, "Bluetooth discovery already active");
+  if (this->a2dp_started_) {
+    ESP_LOGW(TAG, "A2DP stack already started; scan is already running or connected");
     return;
   }
 
@@ -119,7 +125,9 @@ void BtAudioBridge::start_scan() {
   std::strncpy(this->status_, "SCANNING", sizeof(this->status_) - 1);
   this->publish_status_();
 
-  this->start_a2dp_();
+  // Do not initialize the Bluetooth stack from the Home Assistant automation
+  // callback. Defer it to the ESPHome component loop.
+  this->scan_requested_ = true;
 }
 
 void BtAudioBridge::connect_to(const char *mac) {
@@ -147,6 +155,7 @@ void BtAudioBridge::connect_to(const char *mac) {
 
   ESP_LOGI(TAG, "Connecting to Bluetooth device: %s", this->selected_mac_);
   if (!this->a2dp_started_) {
+    this->scan_requested_ = false;
     this->start_a2dp_();
   }
   this->a2dp_source_.connect_to(address);
@@ -154,6 +163,8 @@ void BtAudioBridge::connect_to(const char *mac) {
 
 void BtAudioBridge::disconnect() {
   ESP_LOGI(TAG, "Disconnect requested");
+
+  this->scan_requested_ = false;
 
   if (this->a2dp_started_) {
     this->a2dp_source_.end();
