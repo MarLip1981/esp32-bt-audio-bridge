@@ -32,12 +32,14 @@ class BtAudioBridge : public Component {
 
  protected:
   void publish_status_();
+  void start_a2dp_();
 
   BluetoothA2DPSource a2dp_source_;
   text_sensor::TextSensor *status_sensor_{nullptr};
 
   bool connected_{false};
   bool scanning_{false};
+  bool a2dp_started_{false};
 
   char selected_mac_[18]{};
   char selected_name_[64]{};
