@@ -41,17 +41,13 @@ void BtAudioBridge::setup() {
 
   ESP_LOGI(TAG, "Starting Bluetooth A2DP Source");
 
-  this->a2dp_source_.set_local_name("ESP32 BT Audio Bridge");
-  this->a2dp_source_.set_ssp_enabled(true);
-  this->a2dp_source_.set_auto_reconnect(true, 10);
-  this->a2dp_source_.set_ssid_callback(bt_ssid_callback);
-  this->a2dp_source_.set_discovery_mode_callback(bt_discovery_callback);
-
-  this->a2dp_source_.start();
-
+  // Do not start Classic Bluetooth during ESPHome setup. The previous
+  // immediate start crashed before the native API came online. A2DP is
+  // initialized only when an explicit scan or connection is requested.
   this->connected_ = false;
   this->scanning_ = false;
-  std::strncpy(this->status_, "SCANNING", sizeof(this->status_) - 1);
+  this->a2dp_started_ = false;
+  std::strncpy(this->status_, "READY", sizeof(this->status_) - 1);
   this->publish_status_();
 
   ESP_LOGI(TAG, "Bluetooth A2DP Source started");
@@ -65,6 +61,10 @@ void BtAudioBridge::loop() {
   }
 
   this->last_status_check_ = now;
+
+  if (!this->a2dp_started_) {
+    return;
+  }
 
   const bool active = this->a2dp_source_.is_active();
 
@@ -106,7 +106,7 @@ void BtAudioBridge::dump_config() {
 void BtAudioBridge::start_scan() {
   ESP_LOGI(TAG, "Starting Bluetooth discovery");
 
-  if (this->a2dp_source_.is_discovery_active()) {
+  if (this->a2dp_started_ && this->a2dp_source_.is_discovery_active()) {
     ESP_LOGI(TAG, "Bluetooth discovery already active");
     return;
   }
@@ -115,7 +115,7 @@ void BtAudioBridge::start_scan() {
   std::strncpy(this->status_, "SCANNING", sizeof(this->status_) - 1);
   this->publish_status_();
 
-  this->a2dp_source_.start();
+  this->start_a2dp_();
 }
 
 void BtAudioBridge::connect_to(const char *mac) {
@@ -142,13 +142,19 @@ void BtAudioBridge::connect_to(const char *mac) {
   this->publish_status_();
 
   ESP_LOGI(TAG, "Connecting to Bluetooth device: %s", this->selected_mac_);
+  if (!this->a2dp_started_) {
+    this->start_a2dp_();
+  }
   this->a2dp_source_.connect_to(address);
 }
 
 void BtAudioBridge::disconnect() {
   ESP_LOGI(TAG, "Disconnect requested");
 
-  this->a2dp_source_.end();
+  if (this->a2dp_started_) {
+    this->a2dp_source_.end();
+    this->a2dp_started_ = false;
+  }
 
   this->connected_ = false;
   this->scanning_ = false;
@@ -163,6 +169,16 @@ bool BtAudioBridge::is_connected() {
 
 const char *BtAudioBridge::get_status() {
   return this->status_;
+}
+
+void BtAudioBridge::start_a2dp_() {
+  this->a2dp_source_.set_local_name("ESP32 BT Audio Bridge");
+  this->a2dp_source_.set_ssp_enabled(true);
+  this->a2dp_source_.set_auto_reconnect(true, 10);
+  this->a2dp_source_.set_ssid_callback(bt_ssid_callback);
+  this->a2dp_source_.set_discovery_mode_callback(bt_discovery_callback);
+  this->a2dp_source_.start();
+  this->a2dp_started_ = true;
 }
 
 void BtAudioBridge::publish_status_() {
