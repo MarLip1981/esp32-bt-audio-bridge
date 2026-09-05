@@ -5,4 +5,5 @@ idf_component_register(
         "."
     REQUIRES
         bt
+        ESP32-A2DP
 )
