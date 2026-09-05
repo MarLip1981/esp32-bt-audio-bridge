@@ -3,12 +3,16 @@ from pathlib import Path
 import esphome.codegen as cg
 import esphome.config_validation as cv
 
+from esphome.components import text_sensor
 from esphome.const import CONF_ID
+
 from esphome.components.esp32 import (
     add_idf_component,
     add_idf_sdkconfig_option,
     include_builtin_idf_component,
 )
+
+CONF_STATUS = "status"
 
 DEPENDENCIES = ["wifi"]
 
@@ -21,6 +25,7 @@ BtAudioBridge = bt_audio_bridge_ns.class_(
 
 CONFIG_SCHEMA = cv.Schema({
     cv.GenerateID(): cv.declare_id(BtAudioBridge),
+    cv.Optional(CONF_STATUS): text_sensor.text_sensor_schema(),
 }).extend(cv.COMPONENT_SCHEMA)
 
 
@@ -49,3 +54,7 @@ async def to_code(config):
 
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
+
+    if status_config := config.get(CONF_STATUS):
+        status = await text_sensor.new_text_sensor(status_config)
+        cg.add(var.set_status_sensor(status))
