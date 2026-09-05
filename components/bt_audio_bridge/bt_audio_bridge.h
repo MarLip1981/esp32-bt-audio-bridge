@@ -40,6 +40,7 @@ class BtAudioBridge : public Component {
   bool connected_{false};
   bool scanning_{false};
   bool a2dp_started_{false};
+  bool scan_requested_{false};
 
   char selected_mac_[18]{};
   char selected_name_[64]{};
