@@ -20,11 +20,3 @@ CONFIG_SCHEMA = cv.Schema({
 async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
-
-    # ESP32-A2DP z GitHub.
-    # URL musi zawierać .git, szczególnie przy ESPHome 2026.7+
-    cg.add_library(
-        "ESP32-A2DP",
-        None,
-        "https://github.com/pschatzmann/ESP32-A2DP.git",
-    )
