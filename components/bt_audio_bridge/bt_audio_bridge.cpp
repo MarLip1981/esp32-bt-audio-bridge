@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include <esp_system.h>
+#include <nvs_flash.h>
 
 #ifdef USE_ARDUINO
 #include "esp32-hal-alloc-bt-classic-mem.h"
@@ -214,6 +215,21 @@ bool BtAudioBridge::is_connected() { return this->connected_; }
 const char *BtAudioBridge::get_status() { return this->status_; }
 
 void BtAudioBridge::start_a2dp_() {
+  // ESPHome normally initializes NVS, but the Classic-BT stack expects its own
+  // NVS partition to be available before A2DP/AVRCP opens BT storage.
+  esp_err_t nvs_err = nvs_flash_init();
+  if (nvs_err == ESP_ERR_NVS_NO_FREE_PAGES || nvs_err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    ESP_LOGW(TAG, "NVS init returned %s; erasing NVS and retrying", esp_err_to_name(nvs_err));
+    nvs_flash_erase();
+    nvs_err = nvs_flash_init();
+  }
+  if (nvs_err != ESP_OK && nvs_err != ESP_ERR_NVS_INVALID_STATE) {
+    ESP_LOGE(TAG, "NVS init failed: %s", esp_err_to_name(nvs_err));
+    this->publish_event_("A2DP: NVS init failed");
+  } else {
+    ESP_LOGI(TAG, "NVS ready for Bluetooth");
+  }
+
   ESP_LOGI(TAG, "A2DP init 1/6: set_local_name");
   this->publish_event_("A2DP 1/6: set_local_name");
   this->a2dp_source_.set_local_name("ESP32 BT Audio Bridge");
