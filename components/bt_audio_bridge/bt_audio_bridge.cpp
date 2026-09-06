@@ -9,7 +9,70 @@
 
 #ifdef USE_ARDUINO
 #include "esp32-hal-alloc-bt-classic-mem.h"
+#include "esp32-hal-bt.h"
+#include <esp_bt.h>
+#include <esp_err.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 extern "C" bool btInUse() { return true; }
+
+// Arduino-ESP32 3.3.x routes Classic-BT startup through btStartMode().
+// In our ESPHome/A2DP build that path can fail before Bluedroid starts.
+// The A2DP library already performs the Bluedroid initialization itself, so
+// here we only replace the controller-start part with the equivalent direct
+// ESP-IDF sequence. The linker --wrap in CMakeLists.txt redirects the library
+// call without modifying the vendored ESP32-A2DP source.
+extern "C" bool __wrap_btStartMode(bt_mode mode) {
+  esp_bt_mode_t esp_mode;
+  switch (mode) {
+    case BT_MODE_BLE:
+      esp_mode = ESP_BT_MODE_BLE;
+      break;
+    case BT_MODE_CLASSIC_BT:
+      esp_mode = ESP_BT_MODE_CLASSIC_BT;
+      break;
+    case BT_MODE_BTDM:
+      esp_mode = ESP_BT_MODE_BTDM;
+      break;
+    case BT_MODE_DEFAULT:
+    default:
+      esp_mode = ESP_BT_MODE_CLASSIC_BT;
+      break;
+  }
+
+  ESP_LOGI("bt_audio_bridge", "Direct BT start: mode=%d", static_cast<int>(esp_mode));
+
+  if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_ENABLED) {
+    return true;
+  }
+
+  esp_bt_controller_config_t cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
+  cfg.mode = esp_mode;
+
+  if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE) {
+    esp_err_t err = esp_bt_controller_init(&cfg);
+    if (err != ESP_OK) {
+      ESP_LOGE("bt_audio_bridge", "Direct BT controller init failed: %s", esp_err_to_name(err));
+      return false;
+    }
+
+    while (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE) {
+      vTaskDelay(1);
+    }
+  }
+
+  if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_INITED) {
+    esp_err_t err = esp_bt_controller_enable(esp_mode);
+    if (err != ESP_OK) {
+      ESP_LOGE("bt_audio_bridge", "Direct BT controller enable failed: %s", esp_err_to_name(err));
+      return false;
+    }
+  }
+
+  const bool started = esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_ENABLED;
+  ESP_LOGI("bt_audio_bridge", "Direct BT start result: %s", started ? "OK" : "FAILED");
+  return started;
+}
 #endif
 
 namespace esphome {
