@@ -1,7 +1,7 @@
 idf_component_register(
     SRC_DIRS src
     INCLUDE_DIRS src
-    REQUIRES bt esp_common freertos hal log nvs_flash driver
+    REQUIRES bt esp_common freertos hal log nvs_flash driver espressif__arduino-esp32
 )
 
 target_compile_options(${COMPONENT_LIB} PUBLIC
