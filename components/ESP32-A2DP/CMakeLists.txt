@@ -8,3 +8,10 @@ target_compile_options(${COMPONENT_LIB} PUBLIC
     -DA2DP_LEGACY_I2S_SUPPORT=0
     -DA2DP_I2S_AUDIOTOOLS=0
 )
+
+# ESP32-A2DP calls Arduino's btStartMode() on IDF 5.x.
+# Arduino 3.3.x has a Classic-BT startup regression there, so intercept
+# that symbol and start the controller directly through ESP-IDF instead.
+target_link_options(${COMPONENT_LIB} INTERFACE
+    "-Wl,--wrap=btStartMode"
+)
