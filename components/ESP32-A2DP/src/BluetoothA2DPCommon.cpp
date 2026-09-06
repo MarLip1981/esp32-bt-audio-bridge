@@ -1,4 +1,3 @@
-
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -79,13 +78,10 @@ esp_a2d_connection_state_t BluetoothA2DPCommon::get_connection_state() {
   return connection_state;
 }
 
-/// activate / deactivate the automatic reconnection to the last address (per
-/// default this is on)
 void BluetoothA2DPCommon::set_auto_reconnect(bool active) {
   this->reconnect_status = active ? AutoReconnect : NoReconnect;
 }
 
-/// Reconnects to the last device
 bool BluetoothA2DPCommon::reconnect() {
   if (has_last_connection()) {
     is_target_status_active = true;
@@ -108,7 +104,6 @@ bool BluetoothA2DPCommon::connect_to(esp_bd_addr_t peer) {
   return err == ESP_OK;
 }
 
-/// Calls disconnect or reconnect
 void BluetoothA2DPCommon::set_connected(bool active) {
   if (active) {
     reconnect();
@@ -117,12 +112,10 @@ void BluetoothA2DPCommon::set_connected(bool active) {
   }
 }
 
-/// Closes the connection
 void BluetoothA2DPCommon::disconnect() {
   ESP_LOGI(BT_AV_TAG, "disconect a2d: %s", to_str(last_connection));
 
   is_target_status_active = false;
-  // Prevent automatic reconnect
   is_autoreconnect_allowed = false;
 
   esp_err_t status = esp_a2d_disconnect(last_connection);
@@ -133,14 +126,11 @@ void BluetoothA2DPCommon::disconnect() {
 
 void BluetoothA2DPCommon::end(bool release_memory) {
   ESP_LOGI(BT_AV_TAG, "%s", __func__);
-  // delay which prevents a crash when log level Warning or Error
   int wait_ms = 50;
-  // reconnect should not work after end
   is_start_disabled = false;
   clean_last_connection();
   log_free_heap();
 
-  // Disconnect and wait
   int limit = A2DP_DISCONNECT_LIMIT;
   if (is_connected()) {
     disconnect();
@@ -199,7 +189,6 @@ void BluetoothA2DPCommon::end(bool release_memory) {
     }
     log_free_heap();
 
-    // waiting for status change
     limit = A2DP_DISCONNECT_LIMIT;
     while (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_ENABLED) {
       delay_ms(100);
@@ -217,7 +206,6 @@ void BluetoothA2DPCommon::end(bool release_memory) {
       log_free_heap();
     }
 
-    // after a release memory - a restart will not be possible
     ESP_LOGI(BT_AV_TAG, "esp_bt_controller_mem_release");
     if (esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT) != ESP_OK) {
       ESP_LOGE(BT_AV_TAG, "esp_bt_controller_mem_release failed");
@@ -273,16 +261,13 @@ bool BluetoothA2DPCommon::get_last_connection() {
 void BluetoothA2DPCommon::set_last_connection(esp_bd_addr_t bda) {
   ESP_LOGD(BT_AV_TAG, "set_last_connection: %s", to_str(bda));
 
-  // same value: nothing to store
   if (memcmp(bda, last_connection, ESP_BD_ADDR_LEN) == 0) {
     ESP_LOGD(BT_AV_TAG, "no change!");
     return;
   }
-  // update nvs only when autoreconnect is enabled
   if (reconnect_status != NoReconnect) {
     write_address(last_bda_nvs_name(), bda);
   }
-  // update last_connection variable
   memcpy(last_connection, bda, ESP_BD_ADDR_LEN);
 }
 
@@ -336,55 +321,43 @@ bool BluetoothA2DPCommon::write_address(const char* name, esp_bd_addr_t bda) {
   return err != ESP_OK;
 }
 
-/// Set the callback that is called when the connection state is changed
 void BluetoothA2DPCommon::set_on_connection_state_changed(
     void (*callBack)(esp_a2d_connection_state_t state, void*), void* obj) {
   connection_state_callback = callBack;
   connection_state_obj = obj;
 }
 
-/// Set the callback that is called when the audio state is changed
-/// This callback is called before the I2S bus is changed.
 void BluetoothA2DPCommon::set_on_audio_state_changed(
     void (*callBack)(esp_a2d_audio_state_t state, void*), void* obj) {
   audio_state_callback = callBack;
   audio_state_obj = obj;
 }
 
-/// Set the callback that is called after the audio state has changed.
-/// This callback is called after the I2S bus has changed.
 void BluetoothA2DPCommon::set_on_audio_state_changed_post(
     void (*callBack)(esp_a2d_audio_state_t state, void*), void* obj) {
   audio_state_callback_post = callBack;
   audio_state_obj_post = obj;
 }
 
-/// Prevents that the same method is executed multiple times within the
-/// indicated time limit
 void BluetoothA2DPCommon::debounce(void (*cb)(void), int ms) {
   if (debounce_ms < get_millis()) {
     cb();
-    // new time limit
     debounce_ms = get_millis() + ms;
   }
 }
 
-/// Logs the free heap
 void BluetoothA2DPCommon::log_free_heap() {
   ESP_LOGI(BT_AV_TAG, "Available Heap: %zu", esp_get_free_heap_size());
 }
 
-/// converts esp_a2d_connection_state_t to a string
 const char* BluetoothA2DPCommon::to_str(esp_a2d_connection_state_t state) {
   return m_a2d_conn_state_str[state];
 }
 
-/// converts a esp_a2d_audio_state_t to a string
 const char* BluetoothA2DPCommon::to_str(esp_a2d_audio_state_t state) {
   return m_a2d_audio_state_str[state];
 }
 
-/// converts a esp_bd_addr_t to a string - the string is 18 characters long!
 const char* BluetoothA2DPCommon::to_str(esp_bd_addr_t bda) {
   static char bda_str[18];
   sprintf(bda_str, "%02x:%02x:%02x:%02x:%02x:%02x", bda[0], bda[1], bda[2],
@@ -392,45 +365,56 @@ const char* BluetoothA2DPCommon::to_str(esp_bd_addr_t bda) {
   return (const char*)bda_str;
 }
 
-/// converts esp_bt_gap_discovery_state_t to a string
 const char* BluetoothA2DPCommon::to_str(esp_bt_gap_discovery_state_t state) {
   return m_esp_bt_gap_discovery_state_t[state];
 }
 
-/**
- * @brief Startup logic as implemented by Arduino
- *
- * @return true
- * @return false
- */
 bool BluetoothA2DPCommon::bt_start() {
 #ifdef ARDUINO
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-  auto mde = BT_MODE_CLASSIC_BT;
-  switch (bt_mode) {
-    case ESP_BT_MODE_CLASSIC_BT:
-      mde = BT_MODE_CLASSIC_BT;
-      break;
-    case ESP_BT_MODE_BLE:
-      mde = BT_MODE_BLE;
-      break;
-    case ESP_BT_MODE_BTDM:
-      mde = BT_MODE_BTDM;
-      break;
-    default:
-      mde = BT_MODE_BTDM;
-      ESP_LOGE(BT_APP_TAG, "Unsupported Bluetooth Mode: %d - using %d", bt_mode,
-               mde);
-      break;
+  // ESP32-A2DP's original Arduino path calls btStartMode(). Arduino-ESP32
+  // 3.3.x has a Classic-BT startup regression in that helper. Keep the
+  // ESP32-A2DP engine intact, but start its controller through the same
+  // ESP-IDF sequence used by the library's native path.
+  esp_bt_controller_config_t cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
+  cfg.mode = bt_mode;
+
+  if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_ENABLED) {
+    return true;
   }
-  return btStartMode(mde);
+
+  esp_err_t ret;
+  if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE) {
+    ret = esp_bt_controller_init(&cfg);
+    if (ret != ESP_OK) {
+      ESP_LOGE(BT_APP_TAG, "esp_bt_controller_init failed: %d", ret);
+      return false;
+    }
+    while (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE) {
+      delay_ms(10);
+    }
+  }
+
+  if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_INITED) {
+    ret = esp_bt_controller_enable(bt_mode);
+    if (ret != ESP_OK) {
+      ESP_LOGE(BT_APP_TAG, "BT Enable failed: %d", ret);
+      return false;
+    }
+  }
+
+  if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_ENABLED) {
+    ESP_LOGI(BT_APP_TAG, "BT enabled (direct ESP-IDF controller start)");
+    return true;
+  }
+
+  ESP_LOGE(BT_APP_TAG, "BT Start failed");
+  return false;
 #else
   return btStart();
 #endif
 #else
   esp_bt_controller_config_t cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
-  // esp_bt_controller_enable(MODE) This mode must be equal as the mode in “cfg”
-  // of esp_bt_controller_init().
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 1, 0)
   cfg.mode = bt_mode;
   if (cfg.mode == ESP_BT_MODE_CLASSIC_BT) {
@@ -515,7 +499,6 @@ void BluetoothA2DPCommon::app_task_handler(void* arg) {
       delay_ms(1000);
     }
 
-    /* receive message from work queue and handle it */
     if (pdTRUE ==
         xQueueReceive(app_task_queue, &msg, (TickType_t)portMAX_DELAY)) {
       ESP_LOGD(BT_APP_TAG, "%s, signal: 0x%x, event: 0x%x", __func__, msg.sig,
@@ -558,7 +541,6 @@ bool BluetoothA2DPCommon::app_send_msg(bt_app_msg_t* msg) {
 
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(4, 0, 0)
 
-/// converts a esp_a2d_audio_state_t to a string
 const char* BluetoothA2DPCommon::to_str(esp_avrc_playback_stat_t state) {
   if (state == esp_avrc_playback_stat_t::ESP_AVRC_PLAYBACK_ERROR)
     return "error";
@@ -567,7 +549,6 @@ const char* BluetoothA2DPCommon::to_str(esp_avrc_playback_stat_t state) {
   }
 }
 
-/// Defines if the bluetooth is discoverable
 void BluetoothA2DPCommon::set_discoverability(esp_bt_discovery_mode_t d) {
   discoverability = d;
   if (get_connection_state() == ESP_A2D_CONNECTION_STATE_DISCONNECTED ||
@@ -576,7 +557,6 @@ void BluetoothA2DPCommon::set_discoverability(esp_bt_discovery_mode_t d) {
   }
 }
 
-/// Defines if the bluetooth is connectable
 void BluetoothA2DPCommon::set_scan_mode_connectable(bool connectable) {
   ESP_LOGI(BT_AV_TAG, "set_scan_mode_connectable %s",
            connectable ? "true" : "false");
