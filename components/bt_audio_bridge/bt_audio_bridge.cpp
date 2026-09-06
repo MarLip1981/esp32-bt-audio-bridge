@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <cstring>
 
+#include <esp_system.h>
+
 #ifdef USE_ARDUINO
 #include "esp32-hal-alloc-bt-classic-mem.h"
 extern "C" bool btInUse() { return true; }
@@ -49,6 +51,7 @@ void BtAudioBridge::setup() {
   global_bt_audio_bridge = this;
 
   ESP_LOGI(TAG, "Bluetooth A2DP Source ready");
+  ESP_LOGI(TAG, "Reset reason: %d", static_cast<int>(esp_reset_reason()));
 
   this->connected_ = false;
   this->scanning_ = false;
@@ -188,12 +191,19 @@ const char *BtAudioBridge::get_status() {
 }
 
 void BtAudioBridge::start_a2dp_() {
+  ESP_LOGI(TAG, "A2DP init 1/6: set_local_name");
   this->a2dp_source_.set_local_name("ESP32 BT Audio Bridge");
+  ESP_LOGI(TAG, "A2DP init 2/6: set_ssp_enabled");
   this->a2dp_source_.set_ssp_enabled(true);
+  ESP_LOGI(TAG, "A2DP init 3/6: set_auto_reconnect");
   this->a2dp_source_.set_auto_reconnect(true, 10);
+  ESP_LOGI(TAG, "A2DP init 4/6: set_ssid_callback");
   this->a2dp_source_.set_ssid_callback(bt_ssid_callback);
+  ESP_LOGI(TAG, "A2DP init 5/6: set_discovery_mode_callback");
   this->a2dp_source_.set_discovery_mode_callback(bt_discovery_callback);
+  ESP_LOGI(TAG, "A2DP init 6/6: start");
   this->a2dp_source_.start();
+  ESP_LOGI(TAG, "A2DP init: start() returned successfully");
   this->a2dp_started_ = true;
 }
 
