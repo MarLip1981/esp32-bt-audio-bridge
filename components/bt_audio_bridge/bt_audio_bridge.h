@@ -19,9 +19,10 @@ class BtAudioBridge : public Component {
     return setup_priority::AFTER_WIFI;
   }
 
-  void set_status_sensor(text_sensor::TextSensor *status_sensor) {
-    this->status_sensor_ = status_sensor;
-  }
+  void set_status_sensor(text_sensor::TextSensor *sensor) { this->status_sensor_ = sensor; }
+  void set_event_sensor(text_sensor::TextSensor *sensor) { this->event_sensor_ = sensor; }
+  void set_reset_reason_sensor(text_sensor::TextSensor *sensor) { this->reset_reason_sensor_ = sensor; }
+  void set_device_sensor(text_sensor::TextSensor *sensor) { this->device_sensor_ = sensor; }
 
   void start_scan();
   void connect_to(const char *mac);
@@ -32,10 +33,15 @@ class BtAudioBridge : public Component {
 
  protected:
   void publish_status_();
+  void publish_event_(const char *event);
   void start_a2dp_();
+  const char *reset_reason_();
 
   BluetoothA2DPSource a2dp_source_;
   text_sensor::TextSensor *status_sensor_{nullptr};
+  text_sensor::TextSensor *event_sensor_{nullptr};
+  text_sensor::TextSensor *reset_reason_sensor_{nullptr};
+  text_sensor::TextSensor *device_sensor_{nullptr};
 
   bool connected_{false};
   bool scanning_{false};
