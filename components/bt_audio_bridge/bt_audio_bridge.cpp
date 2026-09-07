@@ -177,6 +177,14 @@ void BtAudioBridge::stop_scan() {
   ESP_LOGI(TAG, "Bluetooth scan stop requested");
   this->scan_requested_ = false;
 
+  // First cancel the active inquiry. The A2DP library otherwise waits for
+  // discovery_active to become false inside end(), while its GAP callback
+  // may immediately schedule another discovery cycle.
+  if (this->a2dp_started_ && this->a2dp_source_.is_discovery_active()) {
+    ESP_LOGI(TAG, "Cancelling active Bluetooth discovery");
+    this->a2dp_source_.cancel_discovery();
+  }
+
   if (this->a2dp_started_) {
     this->a2dp_source_.end();
     this->a2dp_started_ = false;
