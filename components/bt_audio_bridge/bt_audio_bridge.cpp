@@ -17,35 +17,19 @@
 #include <freertos/task.h>
 extern "C" bool btInUse() { return true; }
 
-// Arduino-ESP32 3.3.x routes Classic-BT startup through btStartMode().
-// In our ESPHome/A2DP build that path can fail before Bluedroid starts.
-// The A2DP library already performs the Bluedroid initialization itself, so
-// here we only replace the controller-start part with the equivalent direct
-// ESP-IDF sequence. The linker --wrap in CMakeLists.txt redirects the library
-// call without modifying the vendored ESP32-A2DP source.
 extern "C" bool __wrap_btStartMode(bt_mode mode) {
   esp_bt_mode_t esp_mode;
   switch (mode) {
-    case BT_MODE_BLE:
-      esp_mode = ESP_BT_MODE_BLE;
-      break;
-    case BT_MODE_CLASSIC_BT:
-      esp_mode = ESP_BT_MODE_CLASSIC_BT;
-      break;
-    case BT_MODE_BTDM:
-      esp_mode = ESP_BT_MODE_BTDM;
-      break;
+    case BT_MODE_BLE: esp_mode = ESP_BT_MODE_BLE; break;
+    case BT_MODE_CLASSIC_BT: esp_mode = ESP_BT_MODE_CLASSIC_BT; break;
+    case BT_MODE_BTDM: esp_mode = ESP_BT_MODE_BTDM; break;
     case BT_MODE_DEFAULT:
-    default:
-      esp_mode = ESP_BT_MODE_CLASSIC_BT;
-      break;
+    default: esp_mode = ESP_BT_MODE_CLASSIC_BT; break;
   }
 
   ESP_LOGI("bt_audio_bridge", "Direct BT start: mode=%d", static_cast<int>(esp_mode));
 
-  if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_ENABLED) {
-    return true;
-  }
+  if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_ENABLED) return true;
 
   esp_bt_controller_config_t cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
   cfg.mode = esp_mode;
@@ -56,10 +40,7 @@ extern "C" bool __wrap_btStartMode(bt_mode mode) {
       ESP_LOGE("bt_audio_bridge", "Direct BT controller init failed: %s", esp_err_to_name(err));
       return false;
     }
-
-    while (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE) {
-      vTaskDelay(1);
-    }
+    while (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE) vTaskDelay(1);
   }
 
   if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_INITED) {
@@ -109,9 +90,6 @@ void BtAudioBridge::on_discovery_stopped() {
   ESP_LOGI(TAG, "Bluetooth scan cycle %d/3 finished", this->scan_cycles_);
 
   if (this->scan_cycles_ >= 3) {
-    // The vendored ESP32-A2DP library normally starts another discovery cycle
-    // automatically when no target was found. cancel_discovery() sets is_end,
-    // so the library will leave discovery stopped instead of restarting it.
     ESP_LOGI(TAG, "Bluetooth scan limit reached (3 cycles), stopping scan");
     this->a2dp_source_.cancel_discovery();
     this->scanning_ = false;
@@ -195,6 +173,23 @@ void BtAudioBridge::start_scan() {
   this->scan_requested_ = true;
 }
 
+void BtAudioBridge::stop_scan() {
+  ESP_LOGI(TAG, "Bluetooth scan stop requested");
+  this->scan_requested_ = false;
+
+  if (this->a2dp_started_) {
+    this->a2dp_source_.end();
+    this->a2dp_started_ = false;
+  }
+
+  this->connected_ = false;
+  this->scanning_ = false;
+  this->scan_cycles_ = 0;
+  std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
+  this->publish_status_();
+  this->publish_event_("SCAN: stopped manually");
+}
+
 void BtAudioBridge::connect_to(const char *mac) {
   if (mac == nullptr || std::strlen(mac) == 0) {
     ESP_LOGW(TAG, "No Bluetooth MAC address specified");
@@ -242,8 +237,6 @@ bool BtAudioBridge::is_connected() { return this->connected_; }
 const char *BtAudioBridge::get_status() { return this->status_; }
 
 void BtAudioBridge::start_a2dp_() {
-  // ESPHome normally initializes NVS, but the Classic-BT stack expects its own
-  // NVS partition to be available before A2DP/AVRCP opens BT storage.
   esp_err_t nvs_err = nvs_flash_init();
   if (nvs_err == ESP_ERR_NVS_NO_FREE_PAGES || nvs_err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
     ESP_LOGW(TAG, "NVS init returned %s; erasing NVS and retrying", esp_err_to_name(nvs_err));
