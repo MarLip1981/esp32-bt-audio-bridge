@@ -25,6 +25,7 @@ class BtAudioBridge : public Component {
   void set_device_sensor(text_sensor::TextSensor *sensor) { this->device_sensor_ = sensor; }
 
   void start_scan();
+  void stop_scan();
   void connect_to(const char *mac);
   void disconnect();
   void on_discovery_stopped();
