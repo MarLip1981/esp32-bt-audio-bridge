@@ -1,0 +1,59 @@
+# Example ESPHome configuration for ESP32 DevKit V1 (Espressif)
+# Secrets and encryption keys are intentionally omitted from this example.
+# Put your real Wi-Fi credentials in ESPHome secrets.yaml.
+
+# Board: ESP32 DevKit V1 (Espressif)
+# Definition: definitions/boards/esp32-devkit-v1/manifest.yaml
+
+esphome:
+  name: bt-audio-bridge
+  friendly_name: BT audio bridge
+
+esp32:
+  variant: esp32
+  framework:
+    type: arduino
+
+external_components:
+  - source: github://MarLip1981/esp32-bt-audio-bridge
+    components: [bt_audio_bridge]
+    refresh: 1s
+
+bt_audio_bridge:
+  id: bt_audio_bridge_id
+
+  status:
+    name: "Bluetooth Audio Bridge Status"
+
+logger:
+
+api:
+  # Add your own API encryption key here, or configure it in your local YAML.
+  encryption:
+    key: "REPLACE_WITH_YOUR_32_BYTE_BASE64_API_KEY"
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: BT audio bridge
+
+captive_portal:
+
+button:
+  - platform: template
+    name: "Skanuj Bluetooth"
+    icon: "mdi:bluetooth"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).start_scan();
+
+  - platform: template
+    name: "Stop Scan"
+    icon: "mdi:bluetooth-off"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).stop_scan();
