@@ -184,8 +184,6 @@ class BluetoothA2DPSource : public BluetoothA2DPCommon {
   TimerHandle_t s_tmr;
   bool reset_ble = false;
   bool discovery_active = false;
-  int discovery_cycles = 0;
-  static constexpr int MAX_DISCOVERY_CYCLES = 3;
   uint16_t valid_cod_services = ESP_BT_COD_SRVC_RENDERING |
                                 ESP_BT_COD_SRVC_AUDIO |
                                 ESP_BT_COD_SRVC_TELEPHONY;
