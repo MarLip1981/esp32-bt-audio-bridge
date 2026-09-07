@@ -2,9 +2,6 @@
 # Secrets and encryption keys are intentionally omitted from this example.
 # Put your real Wi-Fi credentials in ESPHome secrets.yaml.
 
-# Board: ESP32 DevKit V1 (Espressif)
-# Definition: definitions/boards/esp32-devkit-v1/manifest.yaml
-
 esphome:
   name: bt-audio-bridge
   friendly_name: BT audio bridge
@@ -25,10 +22,61 @@ bt_audio_bridge:
   status:
     name: "Bluetooth Audio Bridge Status"
 
+  event:
+    name: "Bluetooth Audio Bridge Event"
+
+  reset_reason:
+    name: "Bluetooth Audio Bridge Reset Reason"
+
+  device:
+    name: "Bluetooth Selected Device MAC"
+
+  # Up to 8 devices are exposed directly to Home Assistant.
+  # Each slot contains the discovered name, MAC and RSSI plus a Connect button.
+  devices:
+    - text_sensor:
+        name: "Bluetooth Device 1"
+    - connect_button:
+        name: "Bluetooth Connect Device 1"
+
+    - text_sensor:
+        name: "Bluetooth Device 2"
+    - connect_button:
+        name: "Bluetooth Connect Device 2"
+
+    - text_sensor:
+        name: "Bluetooth Device 3"
+    - connect_button:
+        name: "Bluetooth Connect Device 3"
+
+    - text_sensor:
+        name: "Bluetooth Device 4"
+    - connect_button:
+        name: "Bluetooth Connect Device 4"
+
+    - text_sensor:
+        name: "Bluetooth Device 5"
+    - connect_button:
+        name: "Bluetooth Connect Device 5"
+
+    - text_sensor:
+        name: "Bluetooth Device 6"
+    - connect_button:
+        name: "Bluetooth Connect Device 6"
+
+    - text_sensor:
+        name: "Bluetooth Device 7"
+    - connect_button:
+        name: "Bluetooth Connect Device 7"
+
+    - text_sensor:
+        name: "Bluetooth Device 8"
+    - connect_button:
+        name: "Bluetooth Connect Device 8"
+
 logger:
 
 api:
-  # Add your own API encryption key here, or configure it in your local YAML.
   encryption:
     key: "REPLACE_WITH_YOUR_32_BYTE_BASE64_API_KEY"
 
@@ -57,3 +105,10 @@ button:
     on_press:
       - lambda: |-
           id(bt_audio_bridge_id).stop_scan();
+
+  - platform: template
+    name: "Rozłącz Bluetooth"
+    icon: "mdi:bluetooth-off"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).disconnect();
