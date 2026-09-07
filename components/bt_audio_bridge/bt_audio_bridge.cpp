@@ -69,6 +69,7 @@ static bool bt_ssid_callback(const char *ssid, esp_bd_addr_t address, int rrsi) 
   std::snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
                 address[0], address[1], address[2], address[3], address[4], address[5]);
   ESP_LOGI(TAG, "BT device found: %s  MAC: %s  RSSI: %d", ssid, mac, rrsi);
+  global_bt_audio_bridge->on_device_found(ssid, mac, rrsi);
   return false;
 }
 
@@ -83,6 +84,62 @@ static void bt_discovery_callback(esp_bt_gap_discovery_state_t discovery_mode) {
   }
 }
 
+void BtAudioBridge::on_device_found(const char *name, const char *mac, int rssi) {
+  if (name == nullptr || mac == nullptr) return;
+
+  // Update an existing entry when the same device appears again.
+  for (size_t i = 0; i < this->device_count_; i++) {
+    if (std::strncmp(this->devices_[i].mac, mac, sizeof(this->devices_[i].mac)) == 0) {
+      std::strncpy(this->devices_[i].name, name, sizeof(this->devices_[i].name) - 1);
+      this->devices_[i].name[sizeof(this->devices_[i].name) - 1] = '\0';
+      this->devices_[i].rssi = rssi;
+      this->devices_dirty_ = true;
+      return;
+    }
+  }
+
+  if (this->device_count_ >= MAX_DEVICES) {
+    ESP_LOGW(TAG, "Bluetooth device list full (%u entries), ignoring %s", static_cast<unsigned>(MAX_DEVICES), name);
+    return;
+  }
+
+  const size_t index = this->device_count_++;
+  this->devices_[index].used = true;
+  std::strncpy(this->devices_[index].name, name, sizeof(this->devices_[index].name) - 1);
+  this->devices_[index].name[sizeof(this->devices_[index].name) - 1] = '\0';
+  std::strncpy(this->devices_[index].mac, mac, sizeof(this->devices_[index].mac) - 1);
+  this->devices_[index].mac[sizeof(this->devices_[index].mac) - 1] = '\0';
+  this->devices_[index].rssi = rssi;
+  this->devices_dirty_ = true;
+}
+
+void BtAudioBridge::clear_devices_() {
+  for (size_t i = 0; i < MAX_DEVICES; i++) {
+    this->devices_[i] = DeviceInfo{};
+    if (this->device_sensors_[i] != nullptr) {
+      this->device_sensors_[i]->publish_state("BRAK URZADZENIA");
+    }
+  }
+  this->device_count_ = 0;
+  this->devices_dirty_ = false;
+}
+
+void BtAudioBridge::publish_device_(size_t index) {
+  if (index >= this->device_slot_count_ || this->device_sensors_[index] == nullptr) return;
+
+  if (index >= this->device_count_ || !this->devices_[index].used) {
+    this->device_sensors_[index]->publish_state("BRAK URZADZENIA");
+    return;
+  }
+
+  char state[120];
+  std::snprintf(state, sizeof(state), "%s | %s | %d dBm",
+                this->devices_[index].name,
+                this->devices_[index].mac,
+                this->devices_[index].rssi);
+  this->device_sensors_[index]->publish_state(state);
+}
+
 void BtAudioBridge::on_discovery_stopped() {
   if (!this->scanning_) return;
 
@@ -95,7 +152,7 @@ void BtAudioBridge::on_discovery_stopped() {
     this->scanning_ = false;
     std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
     this->publish_status_();
-    this->publish_event_("SCAN: stopped after 3 cycles, no target found");
+    this->publish_event_("SCAN: finished - results available in Home Assistant");
   }
 }
 
@@ -108,6 +165,8 @@ void BtAudioBridge::setup() {
   this->a2dp_started_ = false;
   this->scan_requested_ = false;
   this->scan_cycles_ = 0;
+  this->device_count_ = 0;
+  this->devices_dirty_ = false;
   std::strncpy(this->status_, "READY", sizeof(this->status_) - 1);
   this->publish_status_();
   this->publish_event_("BOOT: component ready");
@@ -115,6 +174,12 @@ void BtAudioBridge::setup() {
     this->reset_reason_sensor_->publish_state(this->reset_reason_());
   if (this->device_sensor_ != nullptr)
     this->device_sensor_->publish_state(this->selected_mac_[0] != '\0' ? this->selected_mac_ : "NONE");
+  for (size_t i = 0; i < this->device_slot_count_; i++) {
+    if (this->connect_buttons_[i] != nullptr) {
+      this->connect_buttons_[i]->add_on_press_callback([this, i]() { this->connect_slot(i); });
+    }
+    this->publish_device_(i);
+  }
 }
 
 void BtAudioBridge::loop() {
@@ -123,6 +188,11 @@ void BtAudioBridge::loop() {
     ESP_LOGI(TAG, "Starting Bluetooth A2DP stack from ESPHome loop");
     this->publish_event_("SCAN: starting A2DP stack");
     this->start_a2dp_();
+  }
+
+  if (this->devices_dirty_) {
+    for (size_t i = 0; i < this->device_slot_count_; i++) this->publish_device_(i);
+    this->devices_dirty_ = false;
   }
 
   const unsigned long now = millis();
@@ -156,6 +226,7 @@ void BtAudioBridge::dump_config() {
   ESP_LOGCONFIG(TAG, "  Local name: ESP32 BT Audio Bridge");
   ESP_LOGCONFIG(TAG, "  SSP: enabled");
   ESP_LOGCONFIG(TAG, "  Auto reconnect: enabled");
+  ESP_LOGCONFIG(TAG, "  HA scan slots: %u", static_cast<unsigned>(this->device_slot_count_));
 }
 
 void BtAudioBridge::start_scan() {
@@ -165,6 +236,8 @@ void BtAudioBridge::start_scan() {
     this->publish_event_("SCAN: rejected, A2DP already started");
     return;
   }
+
+  this->clear_devices_();
   this->scan_cycles_ = 0;
   this->scanning_ = true;
   std::strncpy(this->status_, "SCANNING", sizeof(this->status_) - 1);
@@ -177,9 +250,6 @@ void BtAudioBridge::stop_scan() {
   ESP_LOGI(TAG, "Bluetooth scan stop requested");
   this->scan_requested_ = false;
 
-  // First cancel the active inquiry. The A2DP library otherwise waits for
-  // discovery_active to become false inside end(), while its GAP callback
-  // may immediately schedule another discovery cycle.
   if (this->a2dp_started_ && this->a2dp_source_.is_discovery_active()) {
     ESP_LOGI(TAG, "Cancelling active Bluetooth discovery");
     this->a2dp_source_.cancel_discovery();
@@ -195,7 +265,19 @@ void BtAudioBridge::stop_scan() {
   this->scan_cycles_ = 0;
   std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
   this->publish_status_();
-  this->publish_event_("SCAN: stopped manually");
+  this->publish_event_("SCAN: stopped manually - results kept in Home Assistant");
+}
+
+void BtAudioBridge::connect_slot(size_t index) {
+  if (index >= this->device_count_ || !this->devices_[index].used) {
+    ESP_LOGW(TAG, "Connect requested for empty Bluetooth slot %u", static_cast<unsigned>(index + 1));
+    this->publish_event_("CONNECT: selected slot is empty");
+    return;
+  }
+
+  std::strncpy(this->selected_name_, this->devices_[index].name, sizeof(this->selected_name_) - 1);
+  this->selected_name_[sizeof(this->selected_name_) - 1] = '\0';
+  this->connect_to(this->devices_[index].mac);
 }
 
 void BtAudioBridge::connect_to(const char *mac) {
@@ -204,25 +286,34 @@ void BtAudioBridge::connect_to(const char *mac) {
     this->publish_event_("CONNECT: no MAC address");
     return;
   }
+
   unsigned int b[6];
   if (std::sscanf(mac, "%02x:%02x:%02x:%02x:%02x:%02x", &b[0], &b[1], &b[2], &b[3], &b[4], &b[5]) != 6) {
     ESP_LOGE(TAG, "Invalid Bluetooth MAC address: %s", mac);
     this->publish_event_("CONNECT: invalid MAC address");
     return;
   }
+
   esp_bd_addr_t address = {static_cast<uint8_t>(b[0]), static_cast<uint8_t>(b[1]), static_cast<uint8_t>(b[2]),
                            static_cast<uint8_t>(b[3]), static_cast<uint8_t>(b[4]), static_cast<uint8_t>(b[5])};
+
   std::strncpy(this->selected_mac_, mac, sizeof(this->selected_mac_) - 1);
   this->selected_mac_[sizeof(this->selected_mac_) - 1] = '\0';
   std::strncpy(this->status_, "CONNECTING", sizeof(this->status_) - 1);
   this->publish_status_();
-  this->publish_event_("CONNECT: starting");
+  this->publish_event_("CONNECT: selected Bluetooth device");
   if (this->device_sensor_ != nullptr) this->device_sensor_->publish_state(this->selected_mac_);
   ESP_LOGI(TAG, "Connecting to Bluetooth device: %s", this->selected_mac_);
+
   if (!this->a2dp_started_) {
     this->scan_requested_ = false;
     this->start_a2dp_();
+  } else if (this->a2dp_source_.is_discovery_active()) {
+    ESP_LOGI(TAG, "Cancelling discovery before direct connection");
+    this->a2dp_source_.cancel_discovery();
   }
+
+  // connect_to() is provided by the vendored ESP32-A2DP engine.
   this->a2dp_source_.connect_to(address);
 }
 
