@@ -27,6 +27,7 @@ class BtAudioBridge : public Component {
   void start_scan();
   void connect_to(const char *mac);
   void disconnect();
+  void on_discovery_stopped();
 
   bool is_connected();
   const char *get_status();
@@ -52,6 +53,7 @@ class BtAudioBridge : public Component {
   char selected_name_[64]{};
   char status_[32]{"STARTING"};
 
+  int scan_cycles_{0};
   unsigned long last_status_check_{0};
 };
 
