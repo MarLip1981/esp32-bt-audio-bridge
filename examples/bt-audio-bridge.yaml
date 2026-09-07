@@ -36,42 +36,42 @@ bt_audio_bridge:
   devices:
     - text_sensor:
         name: "Bluetooth Device 1"
-    - connect_button:
+      connect_button:
         name: "Bluetooth Connect Device 1"
 
     - text_sensor:
         name: "Bluetooth Device 2"
-    - connect_button:
+      connect_button:
         name: "Bluetooth Connect Device 2"
 
     - text_sensor:
         name: "Bluetooth Device 3"
-    - connect_button:
+      connect_button:
         name: "Bluetooth Connect Device 3"
 
     - text_sensor:
         name: "Bluetooth Device 4"
-    - connect_button:
+      connect_button:
         name: "Bluetooth Connect Device 4"
 
     - text_sensor:
         name: "Bluetooth Device 5"
-    - connect_button:
+      connect_button:
         name: "Bluetooth Connect Device 5"
 
     - text_sensor:
         name: "Bluetooth Device 6"
-    - connect_button:
+      connect_button:
         name: "Bluetooth Connect Device 6"
 
     - text_sensor:
         name: "Bluetooth Device 7"
-    - connect_button:
+      connect_button:
         name: "Bluetooth Connect Device 7"
 
     - text_sensor:
         name: "Bluetooth Device 8"
-    - connect_button:
+      connect_button:
         name: "Bluetooth Connect Device 8"
 
 logger:
