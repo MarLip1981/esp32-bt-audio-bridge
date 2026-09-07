@@ -69,6 +69,7 @@ class BtAudioBridge : public Component {
   DeviceInfo devices_[MAX_DEVICES]{};
   size_t device_slot_count_{0};
   size_t device_count_{0};
+  bool devices_dirty_{false};
 
   bool connected_{false};
   bool scanning_{false};
