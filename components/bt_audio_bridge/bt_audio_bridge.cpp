@@ -92,10 +92,33 @@ static bool bt_ssid_callback(const char *ssid, esp_bd_addr_t address, int rrsi) 
 }
 
 static void bt_discovery_callback(esp_bt_gap_discovery_state_t discovery_mode) {
-  if (discovery_mode == ESP_BT_GAP_DISCOVERY_STARTED)
+  if (global_bt_audio_bridge == nullptr) return;
+
+  if (discovery_mode == ESP_BT_GAP_DISCOVERY_STARTED) {
     ESP_LOGI(TAG, "Bluetooth scan started");
-  else
+  } else {
     ESP_LOGI(TAG, "Bluetooth scan finished");
+    global_bt_audio_bridge->on_discovery_stopped();
+  }
+}
+
+void BtAudioBridge::on_discovery_stopped() {
+  if (!this->scanning_) return;
+
+  this->scan_cycles_++;
+  ESP_LOGI(TAG, "Bluetooth scan cycle %d/3 finished", this->scan_cycles_);
+
+  if (this->scan_cycles_ >= 3) {
+    // The vendored ESP32-A2DP library normally starts another discovery cycle
+    // automatically when no target was found. cancel_discovery() sets is_end,
+    // so the library will leave discovery stopped instead of restarting it.
+    ESP_LOGI(TAG, "Bluetooth scan limit reached (3 cycles), stopping scan");
+    this->a2dp_source_.cancel_discovery();
+    this->scanning_ = false;
+    std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
+    this->publish_status_();
+    this->publish_event_("SCAN: stopped after 3 cycles, no target found");
+  }
 }
 
 void BtAudioBridge::setup() {
@@ -106,6 +129,7 @@ void BtAudioBridge::setup() {
   this->scanning_ = false;
   this->a2dp_started_ = false;
   this->scan_requested_ = false;
+  this->scan_cycles_ = 0;
   std::strncpy(this->status_, "READY", sizeof(this->status_) - 1);
   this->publish_status_();
   this->publish_event_("BOOT: component ready");
@@ -132,6 +156,7 @@ void BtAudioBridge::loop() {
   if (active) {
     if (!this->connected_) this->publish_event_("BT: speaker connected");
     this->connected_ = true;
+    this->scanning_ = false;
     std::strncpy(this->status_, "CONNECTED", sizeof(this->status_) - 1);
   } else {
     if (this->connected_) this->publish_event_("BT: speaker disconnected");
@@ -162,6 +187,7 @@ void BtAudioBridge::start_scan() {
     this->publish_event_("SCAN: rejected, A2DP already started");
     return;
   }
+  this->scan_cycles_ = 0;
   this->scanning_ = true;
   std::strncpy(this->status_, "SCANNING", sizeof(this->status_) - 1);
   this->publish_status_();
@@ -207,6 +233,7 @@ void BtAudioBridge::disconnect() {
   }
   this->connected_ = false;
   this->scanning_ = false;
+  this->scan_cycles_ = 0;
   std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
   this->publish_status_();
 }
