@@ -1,6 +1,33 @@
-# Example ESPHome configuration for ESP32 DevKit V1 (Espressif)
-# Secrets and encryption keys are intentionally omitted from this example.
-# Put your real Wi-Fi credentials in ESPHome secrets.yaml.
+# ============================================================================
+# BT AUDIO BRIDGE - PRZYKŁADOWA KONFIGURACJA ESPHOME
+# ============================================================================
+#
+# SPRZĘT:
+#   ESP32 DevKit V1 / ESP32-WROOM-32 (ESP32 Classic Bluetooth)
+#
+# CEL PROJEKTU:
+#   Home Assistant -> Wi-Fi -> ESP32 -> Bluetooth Classic A2DP Source -> głośnik
+#
+# AKTUALNY STAN:
+#   - Wi-Fi / ESPHome API: OK
+#   - Bluetooth Classic + A2DP Source: OK
+#   - skanowanie urządzeń: OK
+#   - lista urządzeń w HA: OK
+#   - połączenie z wybranym głośnikiem: OK
+#   - przesyłanie audio: NASTĘPNY ETAP
+#
+# PLAN:
+#   1. Skanowanie / wybór / połączenie                         [DZIAŁA]
+#   2. Testowe audio przez A2DP                                [TERAZ]
+#   3. Media Player / audio z Home Assistant
+#   4. Zapamiętanie głośnika + auto-reconnect
+#   5. Rozłączanie / zapominanie urządzenia
+#   6. Diagnostyka Bluetooth RSSI + Wi-Fi RSSI + statusy
+#   7. TTS
+#   8. Docelowy, uporządkowany interfejs HA
+#
+# UWAGA: przykład jest bez prawdziwych sekretów. Wi-Fi korzysta z !secret.
+# ============================================================================
 
 esphome:
   name: bt-audio-bridge
@@ -11,12 +38,18 @@ esp32:
   framework:
     type: arduino
 
+# Nasz komponent jest pobierany bezpośrednio z repozytorium.
 external_components:
   - source: github://MarLip1981/esp32-bt-audio-bridge
     components: [bt_audio_bridge]
     refresh: 1s
 
+# ============================================================================
+# GŁÓWNY KOMPONENT BLUETOOTH
+# ============================================================================
 bt_audio_bridge:
+  # ID używane przez przyciski lambda poniżej.
+  # Sufiks _id zapobiega kolizji z nazwą komponentu/repo.
   id: bt_audio_bridge_id
 
   status:
@@ -31,49 +64,34 @@ bt_audio_bridge:
   device:
     name: "Bluetooth Selected Device MAC"
 
-  # Up to 8 devices are exposed directly to Home Assistant.
-  # Each slot contains the discovered name, MAC and RSSI plus a Connect button.
+  # --------------------------------------------------------------------------
+  # WYNIKI SKANOWANIA
+  # --------------------------------------------------------------------------
+  # Maksymalnie 8 slotów. Na tym etapie są to techniczne encje tekstowe.
+  # Docelowo pokażemy je w HA w uporządkowanej sekcji "Wykryte urządzenia",
+  # zamiast prezentować użytkownikowi płaską listę Device 1...8.
+  # --------------------------------------------------------------------------
   devices:
     - text_sensor:
         name: "Bluetooth Device 1"
-      connect_button:
-        name: "Bluetooth Connect Device 1"
-
     - text_sensor:
         name: "Bluetooth Device 2"
-      connect_button:
-        name: "Bluetooth Connect Device 2"
-
     - text_sensor:
         name: "Bluetooth Device 3"
-      connect_button:
-        name: "Bluetooth Connect Device 3"
-
     - text_sensor:
         name: "Bluetooth Device 4"
-      connect_button:
-        name: "Bluetooth Connect Device 4"
-
     - text_sensor:
         name: "Bluetooth Device 5"
-      connect_button:
-        name: "Bluetooth Connect Device 5"
-
     - text_sensor:
         name: "Bluetooth Device 6"
-      connect_button:
-        name: "Bluetooth Connect Device 6"
-
     - text_sensor:
         name: "Bluetooth Device 7"
-      connect_button:
-        name: "Bluetooth Connect Device 7"
-
     - text_sensor:
         name: "Bluetooth Device 8"
-      connect_button:
-        name: "Bluetooth Connect Device 8"
 
+# ============================================================================
+# ESPHOME
+# ============================================================================
 logger:
 
 api:
@@ -91,7 +109,19 @@ wifi:
 
 captive_portal:
 
+# ============================================================================
+# PRZYCISKI TESTOWE / STEROWANIE
+# ============================================================================
+# Obecnie używamy zwykłych template buttons ESPHome.
+# Wywołują one publiczne metody komponentu przez lambda.
+#
+# WAŻNE:
+#   Connect 1 odpowiada devices[0], Connect 2 -> devices[1], itd.
+#   To rozwiązanie jest tymczasową warstwą testową. Docelowo interfejs HA
+#   będzie prezentował znalezione urządzenia znacznie czytelniej.
+# ============================================================================
 button:
+  # Rozpocznij skanowanie Bluetooth.
   - platform: template
     name: "Skanuj Bluetooth"
     icon: "mdi:bluetooth"
@@ -99,6 +129,7 @@ button:
       - lambda: |-
           id(bt_audio_bridge_id).start_scan();
 
+  # Zatrzymaj skanowanie.
   - platform: template
     name: "Stop Scan"
     icon: "mdi:bluetooth-off"
@@ -106,9 +137,83 @@ button:
       - lambda: |-
           id(bt_audio_bridge_id).stop_scan();
 
+  # Połącz z urządzeniem z danego slotu.
   - platform: template
-    name: "Rozłącz Bluetooth"
+    name: "Bluetooth Connect 1"
+    icon: "mdi:bluetooth-connect"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).connect_slot(0);
+
+  - platform: template
+    name: "Bluetooth Connect 2"
+    icon: "mdi:bluetooth-connect"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).connect_slot(1);
+
+  - platform: template
+    name: "Bluetooth Connect 3"
+    icon: "mdi:bluetooth-connect"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).connect_slot(2);
+
+  - platform: template
+    name: "Bluetooth Connect 4"
+    icon: "mdi:bluetooth-connect"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).connect_slot(3);
+
+  - platform: template
+    name: "Bluetooth Connect 5"
+    icon: "mdi:bluetooth-connect"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).connect_slot(4);
+
+  - platform: template
+    name: "Bluetooth Connect 6"
+    icon: "mdi:bluetooth-connect"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).connect_slot(5);
+
+  - platform: template
+    name: "Bluetooth Connect 7"
+    icon: "mdi:bluetooth-connect"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).connect_slot(6);
+
+  - platform: template
+    name: "Bluetooth Connect 8"
+    icon: "mdi:bluetooth-connect"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).connect_slot(7);
+
+  # Rozłącz aktualnie połączone urządzenie.
+  - platform: template
+    name: "Bluetooth Disconnect"
     icon: "mdi:bluetooth-off"
     on_press:
       - lambda: |-
           id(bt_audio_bridge_id).disconnect();
+
+# ============================================================================
+# NOTATKI DLA DALSZEGO ROZWOJU
+# ============================================================================
+#
+# - Nie usuwamy biblioteki ESP32-A2DP. Jest silnikiem Bluetooth Classic A2DP.
+# - Komunikaty UNDERFLOW w A2DP przed podaniem danych audio są spodziewane:
+#   stos Bluetooth jest gotowy, ale źródło audio nie dostarcza jeszcze próbek.
+# - Zapamiętywanie MAC, auto-reconnect i "Zapomnij" są jeszcze do zrobienia.
+# - Docelowy panel HA będzie podzielony na:
+#       STATUS
+#       AKTUALNY GŁOŚNIK
+#       WYKRYTE URZĄDZENIA
+#       AUDIO
+#       DIAGNOSTYKA
+# ============================================================================
