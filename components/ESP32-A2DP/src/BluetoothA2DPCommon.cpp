@@ -96,6 +96,13 @@ bool BluetoothA2DPCommon::reconnect() {
 
 bool BluetoothA2DPCommon::connect_to(esp_bd_addr_t peer) {
   ESP_LOGW(BT_AV_TAG, "connect_to to %s", to_str(peer));
+  // A manually selected device must become the remembered A2DP target too.
+  // set_last_connection() persists the address in NVS when auto-reconnect
+  // is enabled, allowing reconnect after the speaker is powered off/on and
+  // also after an ESP32 reboot.
+  if (reconnect_status != NoReconnect) {
+    set_last_connection(peer);
+  }
   set_scan_mode_connectable_default();
   esp_err_t err = esp_a2d_connect(peer);
   if (err != ESP_OK) {
