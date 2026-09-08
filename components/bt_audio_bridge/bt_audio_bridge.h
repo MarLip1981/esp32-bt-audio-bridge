@@ -1,6 +1,5 @@
 #pragma once
 
-#include "esphome/components/button/button.h"
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
@@ -26,10 +25,9 @@ class BtAudioBridge : public Component {
   void set_event_sensor(text_sensor::TextSensor *sensor) { this->event_sensor_ = sensor; }
   void set_reset_reason_sensor(text_sensor::TextSensor *sensor) { this->reset_reason_sensor_ = sensor; }
   void set_device_sensor(text_sensor::TextSensor *sensor) { this->device_sensor_ = sensor; }
-  void add_device_slot(text_sensor::TextSensor *sensor, button::Button *button) {
+  void add_device_slot(text_sensor::TextSensor *sensor) {
     if (this->device_slot_count_ >= MAX_DEVICES) return;
     this->device_sensors_[this->device_slot_count_] = sensor;
-    this->connect_buttons_[this->device_slot_count_] = button;
     this->device_slot_count_++;
   }
 
@@ -65,7 +63,6 @@ class BtAudioBridge : public Component {
   text_sensor::TextSensor *reset_reason_sensor_{nullptr};
   text_sensor::TextSensor *device_sensor_{nullptr};
   text_sensor::TextSensor *device_sensors_[MAX_DEVICES]{};
-  button::Button *connect_buttons_[MAX_DEVICES]{};
   DeviceInfo devices_[MAX_DEVICES]{};
   size_t device_slot_count_{0};
   size_t device_count_{0};
