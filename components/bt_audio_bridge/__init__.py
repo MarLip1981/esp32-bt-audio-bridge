@@ -3,7 +3,7 @@ from pathlib import Path
 import esphome.codegen as cg
 import esphome.config_validation as cv
 
-from esphome.components import button, text_sensor
+from esphome.components import text_sensor
 from esphome.const import CONF_ID
 
 from esphome.components.esp32 import (
@@ -18,9 +18,8 @@ CONF_RESET_REASON = "reset_reason"
 CONF_DEVICE = "device"
 CONF_DEVICES = "devices"
 CONF_TEXT_SENSOR = "text_sensor"
-CONF_CONNECT_BUTTON = "connect_button"
 
-AUTO_LOAD = ["text_sensor", "button"]
+AUTO_LOAD = ["text_sensor"]
 DEPENDENCIES = ["wifi"]
 
 bt_audio_bridge_ns = cg.esphome_ns.namespace("bt_audio_bridge")
@@ -32,7 +31,6 @@ BtAudioBridge = bt_audio_bridge_ns.class_(
 
 DEVICE_SLOT_SCHEMA = cv.Schema({
     cv.Required(CONF_TEXT_SENSOR): text_sensor.text_sensor_schema(),
-    cv.Required(CONF_CONNECT_BUTTON): button.button_schema(),
 })
 
 CONFIG_SCHEMA = cv.Schema({
@@ -90,5 +88,4 @@ async def to_code(config):
 
     for slot in config.get(CONF_DEVICES, []):
         sensor = await text_sensor.new_text_sensor(slot[CONF_TEXT_SENSOR])
-        connect_button = await button.new_button(slot[CONF_CONNECT_BUTTON])
-        cg.add(var.add_device_slot(sensor, connect_button))
+        cg.add(var.add_device_slot(sensor))
