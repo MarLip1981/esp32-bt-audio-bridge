@@ -36,6 +36,8 @@ class BtAudioBridge : public Component {
   void connect_to(const char *mac);
   void connect_slot(size_t index);
   void disconnect();
+  void start_test_tone();
+  void stop_test_tone();
   void on_discovery_stopped();
   void on_device_found(const char *name, const char *mac, int rssi);
 
@@ -50,6 +52,8 @@ class BtAudioBridge : public Component {
     int rssi{-127};
   };
 
+  static int32_t test_tone_callback_(uint8_t *data, int32_t len);
+  int32_t generate_test_tone_(uint8_t *data, int32_t len);
   void publish_status_();
   void publish_event_(const char *event);
   void publish_device_(size_t index);
@@ -72,6 +76,9 @@ class BtAudioBridge : public Component {
   bool scanning_{false};
   bool a2dp_started_{false};
   bool scan_requested_{false};
+  bool test_tone_active_{false};
+  uint32_t test_tone_until_{0};
+  uint32_t test_tone_phase_{0};
 
   char selected_mac_[18]{};
   char selected_name_[64]{};
