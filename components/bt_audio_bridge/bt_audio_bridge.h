@@ -9,10 +9,14 @@
 namespace esphome {
 namespace bt_audio_bridge {
 
+class BtAudioBridge;
+extern BtAudioBridge *global_bt_audio_bridge;
+
 class BtAudioBridge : public Component {
  public:
   static constexpr size_t MAX_DEVICES = 8;
 
+  BtAudioBridge();
   void setup() override;
   void loop() override;
   void dump_config() override;
