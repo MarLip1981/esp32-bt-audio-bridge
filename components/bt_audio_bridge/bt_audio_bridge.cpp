@@ -87,7 +87,6 @@ static void bt_discovery_callback(esp_bt_gap_discovery_state_t discovery_mode) {
 void BtAudioBridge::on_device_found(const char *name, const char *mac, int rssi) {
   if (name == nullptr || mac == nullptr) return;
 
-  // Update an existing entry when the same device appears again.
   for (size_t i = 0; i < this->device_count_; i++) {
     if (std::strncmp(this->devices_[i].mac, mac, sizeof(this->devices_[i].mac)) == 0) {
       std::strncpy(this->devices_[i].name, name, sizeof(this->devices_[i].name) - 1);
@@ -174,12 +173,7 @@ void BtAudioBridge::setup() {
     this->reset_reason_sensor_->publish_state(this->reset_reason_());
   if (this->device_sensor_ != nullptr)
     this->device_sensor_->publish_state(this->selected_mac_[0] != '\0' ? this->selected_mac_ : "NONE");
-  for (size_t i = 0; i < this->device_slot_count_; i++) {
-    if (this->connect_buttons_[i] != nullptr) {
-      this->connect_buttons_[i]->add_on_press_callback([this, i]() { this->connect_slot(i); });
-    }
-    this->publish_device_(i);
-  }
+  for (size_t i = 0; i < this->device_slot_count_; i++) this->publish_device_(i);
 }
 
 void BtAudioBridge::loop() {
@@ -313,7 +307,6 @@ void BtAudioBridge::connect_to(const char *mac) {
     this->a2dp_source_.cancel_discovery();
   }
 
-  // connect_to() is provided by the vendored ESP32-A2DP engine.
   this->a2dp_source_.connect_to(address);
 }
 
@@ -338,37 +331,23 @@ const char *BtAudioBridge::get_status() { return this->status_; }
 void BtAudioBridge::start_a2dp_() {
   esp_err_t nvs_err = nvs_flash_init();
   if (nvs_err == ESP_ERR_NVS_NO_FREE_PAGES || nvs_err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-    ESP_LOGW(TAG, "NVS init returned %s; erasing NVS and retrying", esp_err_to_name(nvs_err));
+    ESP_LOGW(TAG, "NVS init requires erase; erasing NVS partition");
     nvs_flash_erase();
     nvs_err = nvs_flash_init();
   }
-  if (nvs_err != ESP_OK && nvs_err != ESP_ERR_NVS_INVALID_STATE) {
+  if (nvs_err != ESP_OK) {
     ESP_LOGE(TAG, "NVS init failed: %s", esp_err_to_name(nvs_err));
-    this->publish_event_("A2DP: NVS init failed");
-  } else {
-    ESP_LOGI(TAG, "NVS ready for Bluetooth");
+    this->publish_event_("BT: NVS init failed");
+    this->scanning_ = false;
+    return;
   }
 
-  ESP_LOGI(TAG, "A2DP init 1/6: set_local_name");
-  this->publish_event_("A2DP 1/6: set_local_name");
   this->a2dp_source_.set_local_name("ESP32 BT Audio Bridge");
-  ESP_LOGI(TAG, "A2DP init 2/6: set_ssp_enabled");
-  this->publish_event_("A2DP 2/6: set_ssp_enabled");
   this->a2dp_source_.set_ssp_enabled(true);
-  ESP_LOGI(TAG, "A2DP init 3/6: set_auto_reconnect");
-  this->publish_event_("A2DP 3/6: set_auto_reconnect");
   this->a2dp_source_.set_auto_reconnect(true, 10);
-  ESP_LOGI(TAG, "A2DP init 4/6: set_ssid_callback");
-  this->publish_event_("A2DP 4/6: set_ssid_callback");
   this->a2dp_source_.set_ssid_callback(bt_ssid_callback);
-  ESP_LOGI(TAG, "A2DP init 5/6: set_discovery_mode_callback");
-  this->publish_event_("A2DP 5/6: set_discovery_callback");
   this->a2dp_source_.set_discovery_mode_callback(bt_discovery_callback);
-  ESP_LOGI(TAG, "A2DP init 6/6: start");
-  this->publish_event_("A2DP 6/6: start()");
   this->a2dp_source_.start();
-  ESP_LOGI(TAG, "A2DP init: start() returned successfully");
-  this->publish_event_("A2DP: start() returned");
   this->a2dp_started_ = true;
 }
 
@@ -382,17 +361,16 @@ void BtAudioBridge::publish_event_(const char *event) {
 
 const char *BtAudioBridge::reset_reason_() {
   switch (esp_reset_reason()) {
-    case ESP_RST_POWERON: return "POWER ON";
-    case ESP_RST_EXT: return "EXTERNAL RESET";
-    case ESP_RST_SW: return "SOFTWARE RESET";
-    case ESP_RST_PANIC: return "PANIC / CRASH";
-    case ESP_RST_INT_WDT: return "INTERRUPT WATCHDOG";
-    case ESP_RST_TASK_WDT: return "TASK WATCHDOG";
-    case ESP_RST_WDT: return "OTHER WATCHDOG";
-    case ESP_RST_DEEPSLEEP: return "DEEP SLEEP";
-    case ESP_RST_BROWNOUT: return "BROWNOUT / LOW VOLTAGE";
-    case ESP_RST_SDIO: return "SDIO RESET";
-    default: return "UNKNOWN";
+    case ESP_RST_POWERON: return "POWERON";
+    case ESP_RST_EXT: return "EXTERNAL";
+    case ESP_RST_SW: return "SOFTWARE";
+    case ESP_RST_PANIC: return "PANIC";
+    case ESP_RST_INT_WDT: return "INT_WDT";
+    case ESP_RST_TASK_WDT: return "TASK_WDT";
+    case ESP_RST_WDT: return "WDT";
+    case ESP_RST_BROWNOUT: return "BROWNOUT";
+    case ESP_RST_SDIO: return "SDIO";
+    default: return "OTHER";
   }
 }
 
