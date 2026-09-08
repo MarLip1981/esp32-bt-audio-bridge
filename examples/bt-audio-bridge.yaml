@@ -14,7 +14,8 @@
 #   - skanowanie urządzeń: OK
 #   - lista urządzeń w HA: OK
 #   - połączenie z wybranym głośnikiem: OK
-#   - przesyłanie audio: NASTĘPNY ETAP
+#   - testowe audio 440 Hz: DODANE - TERAZ TESTUJEMY
+#   - właściwy dźwięk z Home Assistant: NASTĘPNY ETAP
 #
 # PLAN:
 #   1. Skanowanie / wybór / połączenie                         [DZIAŁA]
@@ -38,18 +39,13 @@ esp32:
   framework:
     type: arduino
 
-# Nasz komponent jest pobierany bezpośrednio z repozytorium.
 external_components:
   - source: github://MarLip1981/esp32-bt-audio-bridge
     components: [bt_audio_bridge]
     refresh: 1s
 
-# ============================================================================
-# GŁÓWNY KOMPONENT BLUETOOTH
-# ============================================================================
 bt_audio_bridge:
   # ID używane przez przyciski lambda poniżej.
-  # Sufiks _id zapobiega kolizji z nazwą komponentu/repo.
   id: bt_audio_bridge_id
 
   status:
@@ -68,8 +64,7 @@ bt_audio_bridge:
   # WYNIKI SKANOWANIA
   # --------------------------------------------------------------------------
   # Maksymalnie 8 slotów. Na tym etapie są to techniczne encje tekstowe.
-  # Docelowo pokażemy je w HA w uporządkowanej sekcji "Wykryte urządzenia",
-  # zamiast prezentować użytkownikowi płaską listę Device 1...8.
+  # Docelowo pokażemy je w HA w uporządkowanej sekcji "Wykryte urządzenia".
   # --------------------------------------------------------------------------
   devices:
     - text_sensor:
@@ -89,9 +84,6 @@ bt_audio_bridge:
     - text_sensor:
         name: "Bluetooth Device 8"
 
-# ============================================================================
-# ESPHOME
-# ============================================================================
 logger:
 
 api:
@@ -112,16 +104,11 @@ captive_portal:
 # ============================================================================
 # PRZYCISKI TESTOWE / STEROWANIE
 # ============================================================================
-# Obecnie używamy zwykłych template buttons ESPHome.
-# Wywołują one publiczne metody komponentu przez lambda.
 #
-# WAŻNE:
-#   Connect 1 odpowiada devices[0], Connect 2 -> devices[1], itd.
-#   To rozwiązanie jest tymczasową warstwą testową. Docelowo interfejs HA
-#   będzie prezentował znalezione urządzenia znacznie czytelniej.
+# Connect 1 odpowiada devices[0], Connect 2 -> devices[1], itd.
+# Te przyciski są warstwą testową. Docelowo znikną z głównego panelu HA.
 # ============================================================================
 button:
-  # Rozpocznij skanowanie Bluetooth.
   - platform: template
     name: "Skanuj Bluetooth"
     icon: "mdi:bluetooth"
@@ -129,7 +116,6 @@ button:
       - lambda: |-
           id(bt_audio_bridge_id).start_scan();
 
-  # Zatrzymaj skanowanie.
   - platform: template
     name: "Stop Scan"
     icon: "mdi:bluetooth-off"
@@ -137,7 +123,6 @@ button:
       - lambda: |-
           id(bt_audio_bridge_id).stop_scan();
 
-  # Połącz z urządzeniem z danego slotu.
   - platform: template
     name: "Bluetooth Connect 1"
     icon: "mdi:bluetooth-connect"
@@ -194,7 +179,27 @@ button:
       - lambda: |-
           id(bt_audio_bridge_id).connect_slot(7);
 
-  # Rozłącz aktualnie połączone urządzenie.
+  # --------------------------------------------------------------------------
+  # AUDIO TEST
+  # --------------------------------------------------------------------------
+  # Po połączeniu głośnika naciśnij ten przycisk.
+  # ESP32 wygeneruje około 3 sekundy tonu testowego ~441 Hz.
+  # Jeżeli głośnik wyda dźwięk, mamy potwierdzenie całej ścieżki:
+  # ESP32 -> A2DP -> Bluetooth -> głośnik.
+  - platform: template
+    name: "Test Audio"
+    icon: "mdi:volume-high"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).start_test_tone();
+
+  - platform: template
+    name: "Stop Test Audio"
+    icon: "mdi:volume-off"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).stop_test_tone();
+
   - platform: template
     name: "Bluetooth Disconnect"
     icon: "mdi:bluetooth-off"
@@ -207,8 +212,11 @@ button:
 # ============================================================================
 #
 # - Nie usuwamy biblioteki ESP32-A2DP. Jest silnikiem Bluetooth Classic A2DP.
-# - Komunikaty UNDERFLOW w A2DP przed podaniem danych audio są spodziewane:
-#   stos Bluetooth jest gotowy, ale źródło audio nie dostarcza jeszcze próbek.
+# - Test audio korzysta z callbacku PCM biblioteki A2DP, a nie z osobnego
+#   silnika Bluetooth.
+# - Przed podaniem danych audio komunikaty UNDERFLOW są spodziewane.
+# - Po uruchomieniu Test Audio UNDERFLOW powinien zniknąć podczas odtwarzania
+#   albo przynajmniej przestać być skutkiem braku danych audio.
 # - Zapamiętywanie MAC, auto-reconnect i "Zapomnij" są jeszcze do zrobienia.
 # - Docelowy panel HA będzie podzielony na:
 #       STATUS
