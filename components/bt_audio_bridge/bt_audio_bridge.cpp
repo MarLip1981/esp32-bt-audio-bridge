@@ -120,7 +120,7 @@ void BtAudioBridge::clear_devices_() {
   for (size_t i = 0; i < MAX_DEVICES; i++) {
     this->devices_[i] = DeviceInfo{};
     if (this->device_sensors_[i] != nullptr) {
-      this->device_sensors_[i]->publish_state("BRAK URZADZENIA");
+      this->device_sensors_[i]->publish_state("BRAK URZĄDZENIA");
     }
   }
   this->device_count_ = 0;
@@ -131,7 +131,7 @@ void BtAudioBridge::publish_device_(size_t index) {
   if (index >= this->device_slot_count_ || this->device_sensors_[index] == nullptr) return;
 
   if (index >= this->device_count_ || !this->devices_[index].used) {
-    this->device_sensors_[index]->publish_state("BRAK URZADZENIA");
+    this->device_sensors_[index]->publish_state("BRAK URZĄDZENIA");
     return;
   }
 
@@ -209,9 +209,17 @@ void BtAudioBridge::save_speaker_() {
 void BtAudioBridge::sync_current_speaker_() {
   if (!this->a2dp_started_ || !this->a2dp_source_.is_active()) return;
 
+  auto is_zero_address = [](const esp_bd_addr_t *addr) {
+    if (addr == nullptr) return true;
+    for (size_t i = 0; i < ESP_BD_ADDR_LEN; i++) {
+      if ((*addr)[i] != 0) return false;
+    }
+    return true;
+  };
+
   esp_bd_addr_t *address = this->a2dp_source_.get_current_peer_address();
-  if (address == nullptr) address = this->a2dp_source_.get_last_peer_address();
-  if (address == nullptr) return;
+  if (is_zero_address(address)) address = this->a2dp_source_.get_last_peer_address();
+  if (is_zero_address(address)) return;
 
   char mac[18];
   std::snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
@@ -230,8 +238,6 @@ void BtAudioBridge::sync_current_speaker_() {
     this->selected_name_[sizeof(this->selected_name_) - 1] = '\0';
     changed = true;
   }
-
-  if (!changed && this->device_sensor_ != nullptr) return;
 
   char state[120];
   std::snprintf(state, sizeof(state), "%s | %s",
@@ -441,8 +447,12 @@ void BtAudioBridge::forget_speaker() {
   this->publish_event_("BT: forgetting saved speaker");
   this->scan_requested_ = false;
 
+  // Ensure the ESP32-A2DP library's own persisted peer is also cleared,
+  // even when the A2DP stack has not been started yet.
+  this->a2dp_source_.set_auto_reconnect(true, 10);
+  this->a2dp_source_.clean_last_connection();
+
   if (this->a2dp_started_) {
-    this->a2dp_source_.clean_last_connection();
     this->a2dp_source_.end();
     this->a2dp_started_ = false;
   }
