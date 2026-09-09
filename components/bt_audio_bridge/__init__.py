@@ -72,20 +72,20 @@ async def to_code(config):
     await cg.register_component(var, config)
 
     if status_config := config.get(CONF_STATUS):
-        sensor = await text_sensor.new_text_sensor(status_config)
-        cg.add(var.set_status_sensor(sensor))
+        status_sensor = await text_sensor.new_text_sensor(status_config)
+        cg.add(var.set_status_sensor(status_sensor))
 
     if event_config := config.get(CONF_EVENT):
-        sensor = await text_sensor.new_text_sensor(event_config)
-        cg.add(var.set_event_sensor(sensor))
+        event_sensor = await text_sensor.new_text_sensor(event_config)
+        cg.add(var.set_event_sensor(event_sensor))
 
     if reset_config := config.get(CONF_RESET_REASON):
-        sensor = await text_sensor.new_text_sensor(reset_config)
-        cg.add(var.set_reset_reason_sensor(sensor))
+        reset_sensor = await text_sensor.new_text_sensor(reset_config)
+        cg.add(var.set_reset_reason_sensor(reset_sensor))
 
     if device_config := config.get(CONF_DEVICE):
-        sensor = await text_sensor.new_text_sensor(device_config)
-        cg.add(var.set_device_sensor(sensor))
+        device_sensor = await text_sensor.new_text_sensor(device_config)
+        cg.add(var.set_device_sensor(device_sensor))
 
     if rssi_config := config.get(CONF_RSSI):
         rssi_sensor = await sensor.new_sensor(rssi_config)
