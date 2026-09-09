@@ -8,11 +8,14 @@
 #include <cstring>
 
 #include <esp_bt.h>
-#include <esp_clk.h>
 #include <esp_heap_caps.h>
 #include <esp_wifi.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+
+#ifdef USE_ARDUINO
+#include <Arduino.h>
+#endif
 
 namespace esphome {
 namespace bt_audio_bridge {
@@ -121,7 +124,11 @@ void BtAudioBridgeDiagnostics::update_system_() {
   if (this->heap_largest_block_sensor_ != nullptr) this->heap_largest_block_sensor_->publish_state(static_cast<float>(largest_block));
 
   if (this->cpu_frequency_sensor_ != nullptr) {
-    this->cpu_frequency_sensor_->publish_state(static_cast<float>(esp_clk_cpu_freq()) / 1000000.0f);
+#ifdef USE_ARDUINO
+    this->cpu_frequency_sensor_->publish_state(static_cast<float>(ESP.getCpuFreqMHz()));
+#else
+    this->cpu_frequency_sensor_->publish_state(NAN);
+#endif
   }
 
   if (this->cpu_load_sensor_ != nullptr) {
