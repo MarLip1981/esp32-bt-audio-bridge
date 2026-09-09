@@ -186,8 +186,6 @@ void BtAudioBridge::sync_current_speaker_() {
     return true;
   };
 
-  // BluetoothA2DPSource exposes the persisted/active peer through get_last_peer_address().
-  // Do not call get_current_peer_address(): that API does not exist in the bundled library.
   esp_bd_addr_t *address = this->a2dp_source_.get_last_peer_address();
   if (is_zero_address(address)) return;
 
@@ -195,16 +193,26 @@ void BtAudioBridge::sync_current_speaker_() {
   std::snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X", (*address)[0], (*address)[1], (*address)[2], (*address)[3], (*address)[4], (*address)[5]);
 
   const char *library_name = this->a2dp_source_.get_name();
+  ESP_LOGD(TAG, "A2DP name during sync: '%s' | saved name: '%s'", library_name != nullptr ? library_name : "<null>", this->selected_name_[0] != '\0' ? this->selected_name_ : "<empty>");
+
   bool changed = std::strncmp(this->selected_mac_, mac, sizeof(this->selected_mac_)) != 0;
   if (changed) {
     std::strncpy(this->selected_mac_, mac, sizeof(this->selected_mac_) - 1);
     this->selected_mac_[sizeof(this->selected_mac_) - 1] = '\0';
   }
-  if (library_name != nullptr && library_name[0] != '\0' && std::strncmp(this->selected_name_, library_name, sizeof(this->selected_name_)) != 0) {
+
+  // On automatic reconnect the bundled A2DP library can expose an empty or
+  // placeholder name. Never let that replace the trusted name saved from scan.
+  const bool library_name_valid = library_name != nullptr && library_name[0] != '\0' &&
+                                  std::strcmp(library_name, "UNKNOWN") != 0 &&
+                                  std::strcmp(library_name, "unknown") != 0 &&
+                                  std::strcmp(library_name, "ESP32_A2DP_SRC") != 0;
+  if (library_name_valid && std::strncmp(this->selected_name_, library_name, sizeof(this->selected_name_)) != 0) {
     std::strncpy(this->selected_name_, library_name, sizeof(this->selected_name_) - 1);
     this->selected_name_[sizeof(this->selected_name_) - 1] = '\0';
     changed = true;
   }
+
   char state[120];
   std::snprintf(state, sizeof(state), "%s | %s", this->selected_name_[0] != '\0' ? this->selected_name_ : "UNKNOWN", this->selected_mac_);
   if (this->device_sensor_ != nullptr) this->device_sensor_->publish_state(state);
@@ -451,7 +459,6 @@ const char *BtAudioBridge::reset_reason_() {
     case ESP_RST_SW: return "SOFTWARE";
     case ESP_RST_PANIC: return "PANIC";
     case ESP_RST_INT_WDT: return "INT_WDT";
-    case ESP_RST_TASK_WDT: return "TASK_WDT";
     case ESP_RST_WDT: return "WDT";
     case ESP_RST_BROWNOUT: return "BROWNOUT";
     case ESP_RST_SDIO: return "SDIO";
