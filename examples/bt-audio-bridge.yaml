@@ -15,7 +15,7 @@
 #   - lista urządzeń w HA: OK
 #   - połączenie z wybranym głośnikiem: OK
 #   - zapamiętanie głośnika: OK
-#   - synchronizacja aktualnego głośnika po auto-reconnect: DODANA
+#   - synchronizacja aktualnego głośnika po auto-reconnect: OK
 #   - testowe audio 440 Hz: DODANE - TERAZ TESTUJEMY
 #   - właściwy dźwięk z Home Assistant: NASTĘPNY ETAP
 #
@@ -25,7 +25,7 @@
 #   3. Media Player / audio z Home Assistant
 #   4. Zapamiętanie głośnika + auto-reconnect                  [DZIAŁA]
 #   5. Synchronizacja informacji o aktualnym głośniku          [DZIAŁA]
-#   6. Rozłączanie / zapominanie urządzenia
+#   6. Rozłączanie / zapominanie urządzenia                   [DODANE]
 #   7. Diagnostyka Bluetooth RSSI + Wi-Fi RSSI + statusy
 #   8. TTS
 #   9. Docelowy, uporządkowany interfejs HA
@@ -55,10 +55,7 @@ bt_audio_bridge:
     name: "Bluetooth Audio Bridge Reset Reason"
 
   device:
-    name: "Bluetooth Selected Device MAC"
-
-  current_speaker:
-    name: "Bluetooth Current Speaker"
+    name: "Bluetooth Selected Device"
 
   devices:
     - text_sensor:
@@ -186,3 +183,10 @@ button:
     on_press:
       - lambda: |-
           id(bt_audio_bridge_id).disconnect();
+
+  - platform: template
+    name: "Bluetooth Forget"
+    icon: "mdi:bluetooth-settings"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).forget_speaker();
