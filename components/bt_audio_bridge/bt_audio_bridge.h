@@ -40,6 +40,7 @@ class BtAudioBridge : public Component {
   void connect_to(const char *mac);
   void connect_slot(size_t index);
   void disconnect();
+  void forget_speaker();
   void start_test_tone();
   void stop_test_tone();
   void on_discovery_stopped();
@@ -47,12 +48,6 @@ class BtAudioBridge : public Component {
 
   bool is_connected();
   const char *get_status();
-
-  // Read-only access to the A2DP library's current/last peer information.
-  // Used by ESPHome template sensors so HA can show the speaker after
-  // an automatic reconnect, including after an ESP32 reboot.
-  const char *get_connected_name() { return this->a2dp_source_.get_name(); }
-  esp_bd_addr_t *get_connected_address() { return this->a2dp_source_.get_last_peer_address(); }
 
  protected:
   struct DeviceInfo {
@@ -69,6 +64,9 @@ class BtAudioBridge : public Component {
   void publish_device_(size_t index);
   void clear_devices_();
   void start_a2dp_();
+  void load_saved_speaker_();
+  void save_speaker_();
+  void sync_current_speaker_();
   const char *reset_reason_();
 
   BluetoothA2DPSource a2dp_source_;
