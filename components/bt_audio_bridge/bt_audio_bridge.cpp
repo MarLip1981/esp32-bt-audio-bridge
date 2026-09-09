@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include <esp_system.h>
+#include <nvs.h>
 #include <nvs_flash.h>
 
 #ifdef USE_ARDUINO
@@ -61,6 +62,9 @@ namespace esphome {
 namespace bt_audio_bridge {
 
 static const char *const TAG = "bt_audio_bridge";
+static const char *const NVS_NAMESPACE = "bt_aud_bridge";
+static const char *const NVS_NAME_KEY = "speaker_name";
+static const char *const NVS_MAC_KEY = "speaker_mac";
 BtAudioBridge *global_bt_audio_bridge = nullptr;
 
 static bool bt_ssid_callback(const char *ssid, esp_bd_addr_t address, int rrsi) {
@@ -155,10 +159,103 @@ void BtAudioBridge::on_discovery_stopped() {
   }
 }
 
+void BtAudioBridge::load_saved_speaker_() {
+  nvs_handle_t handle;
+  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
+  if (err != ESP_OK) {
+    ESP_LOGI(TAG, "No saved Bluetooth speaker in NVS");
+    return;
+  }
+
+  size_t len = sizeof(this->selected_name_);
+  if (nvs_get_str(handle, NVS_NAME_KEY, this->selected_name_, &len) != ESP_OK) this->selected_name_[0] = '\0';
+
+  len = sizeof(this->selected_mac_);
+  if (nvs_get_str(handle, NVS_MAC_KEY, this->selected_mac_, &len) != ESP_OK) this->selected_mac_[0] = '\0';
+
+  nvs_close(handle);
+
+  if (this->selected_mac_[0] != '\0') {
+    ESP_LOGI(TAG, "Saved Bluetooth speaker: %s | %s",
+             this->selected_name_[0] != '\0' ? this->selected_name_ : "UNKNOWN",
+             this->selected_mac_);
+  }
+}
+
+void BtAudioBridge::save_speaker_() {
+  if (this->selected_mac_[0] == '\0') return;
+
+  nvs_handle_t handle;
+  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Cannot open speaker NVS: %s", esp_err_to_name(err));
+    return;
+  }
+
+  nvs_set_str(handle, NVS_MAC_KEY, this->selected_mac_);
+  if (this->selected_name_[0] != '\0') nvs_set_str(handle, NVS_NAME_KEY, this->selected_name_);
+  err = nvs_commit(handle);
+  nvs_close(handle);
+
+  if (err == ESP_OK) {
+    ESP_LOGI(TAG, "Saved Bluetooth speaker: %s | %s",
+             this->selected_name_[0] != '\0' ? this->selected_name_ : "UNKNOWN",
+             this->selected_mac_);
+  } else {
+    ESP_LOGE(TAG, "Cannot commit speaker NVS: %s", esp_err_to_name(err));
+  }
+}
+
+void BtAudioBridge::sync_current_speaker_() {
+  if (!this->a2dp_started_ || !this->a2dp_source_.is_active()) return;
+
+  esp_bd_addr_t *address = this->a2dp_source_.get_current_peer_address();
+  if (address == nullptr) address = this->a2dp_source_.get_last_peer_address();
+  if (address == nullptr) return;
+
+  char mac[18];
+  std::snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+                (*address)[0], (*address)[1], (*address)[2], (*address)[3], (*address)[4], (*address)[5]);
+
+  const char *library_name = this->a2dp_source_.get_name();
+  bool changed = std::strncmp(this->selected_mac_, mac, sizeof(this->selected_mac_)) != 0;
+  if (changed) {
+    std::strncpy(this->selected_mac_, mac, sizeof(this->selected_mac_) - 1);
+    this->selected_mac_[sizeof(this->selected_mac_) - 1] = '\0';
+  }
+
+  if (library_name != nullptr && library_name[0] != '\0' &&
+      std::strncmp(this->selected_name_, library_name, sizeof(this->selected_name_)) != 0) {
+    std::strncpy(this->selected_name_, library_name, sizeof(this->selected_name_) - 1);
+    this->selected_name_[sizeof(this->selected_name_) - 1] = '\0';
+    changed = true;
+  }
+
+  if (!changed && this->device_sensor_ != nullptr) return;
+
+  char state[120];
+  std::snprintf(state, sizeof(state), "%s | %s",
+                this->selected_name_[0] != '\0' ? this->selected_name_ : "UNKNOWN",
+                this->selected_mac_);
+  if (this->device_sensor_ != nullptr) this->device_sensor_->publish_state(state);
+
+  if (changed) this->save_speaker_();
+}
+
 void BtAudioBridge::setup() {
   global_bt_audio_bridge = this;
   ESP_LOGI(TAG, "Bluetooth A2DP Source ready");
   ESP_LOGI(TAG, "Reset reason: %d", static_cast<int>(esp_reset_reason()));
+
+  esp_err_t nvs_err = nvs_flash_init();
+  if (nvs_err == ESP_ERR_NVS_NO_FREE_PAGES || nvs_err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    ESP_LOGW(TAG, "NVS init requires erase; erasing NVS partition");
+    nvs_flash_erase();
+    nvs_err = nvs_flash_init();
+  }
+  if (nvs_err == ESP_OK) this->load_saved_speaker_();
+  else ESP_LOGE(TAG, "NVS init failed during setup: %s", esp_err_to_name(nvs_err));
+
   this->connected_ = false;
   this->scanning_ = false;
   this->a2dp_started_ = false;
@@ -171,8 +268,13 @@ void BtAudioBridge::setup() {
   this->publish_event_("BOOT: component ready");
   if (this->reset_reason_sensor_ != nullptr)
     this->reset_reason_sensor_->publish_state(this->reset_reason_());
-  if (this->device_sensor_ != nullptr)
-    this->device_sensor_->publish_state(this->selected_mac_[0] != '\0' ? this->selected_mac_ : "NONE");
+  if (this->device_sensor_ != nullptr) {
+    char state[120];
+    std::snprintf(state, sizeof(state), "%s | %s",
+                  this->selected_name_[0] != '\0' ? this->selected_name_ : "UNKNOWN",
+                  this->selected_mac_[0] != '\0' ? this->selected_mac_ : "NONE");
+    this->device_sensor_->publish_state(state);
+  }
   for (size_t i = 0; i < this->device_slot_count_; i++) this->publish_device_(i);
 }
 
@@ -200,6 +302,7 @@ void BtAudioBridge::loop() {
     this->connected_ = true;
     this->scanning_ = false;
     std::strncpy(this->status_, "CONNECTED", sizeof(this->status_) - 1);
+    this->sync_current_speaker_();
   } else {
     if (this->connected_) this->publish_event_("BT: speaker disconnected");
     this->connected_ = false;
@@ -296,8 +399,16 @@ void BtAudioBridge::connect_to(const char *mac) {
   std::strncpy(this->status_, "CONNECTING", sizeof(this->status_) - 1);
   this->publish_status_();
   this->publish_event_("CONNECT: selected Bluetooth device");
-  if (this->device_sensor_ != nullptr) this->device_sensor_->publish_state(this->selected_mac_);
-  ESP_LOGI(TAG, "Connecting to Bluetooth device: %s", this->selected_mac_);
+  if (this->device_sensor_ != nullptr) {
+    char state[120];
+    std::snprintf(state, sizeof(state), "%s | %s",
+                  this->selected_name_[0] != '\0' ? this->selected_name_ : "UNKNOWN",
+                  this->selected_mac_);
+    this->device_sensor_->publish_state(state);
+  }
+  ESP_LOGI(TAG, "Connecting to Bluetooth device: %s | %s",
+           this->selected_name_[0] != '\0' ? this->selected_name_ : "UNKNOWN", this->selected_mac_);
+  this->save_speaker_();
 
   if (!this->a2dp_started_) {
     this->scan_requested_ = false;
@@ -323,6 +434,36 @@ void BtAudioBridge::disconnect() {
   this->scan_cycles_ = 0;
   std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
   this->publish_status_();
+}
+
+void BtAudioBridge::forget_speaker() {
+  ESP_LOGI(TAG, "Forget speaker requested");
+  this->publish_event_("BT: forgetting saved speaker");
+  this->scan_requested_ = false;
+
+  if (this->a2dp_started_) {
+    this->a2dp_source_.clean_last_connection();
+    this->a2dp_source_.end();
+    this->a2dp_started_ = false;
+  }
+
+  nvs_handle_t handle;
+  if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
+    nvs_erase_key(handle, NVS_NAME_KEY);
+    nvs_erase_key(handle, NVS_MAC_KEY);
+    nvs_commit(handle);
+    nvs_close(handle);
+  }
+
+  this->selected_name_[0] = '\0';
+  this->selected_mac_[0] = '\0';
+  this->connected_ = false;
+  this->scanning_ = false;
+  this->scan_cycles_ = 0;
+  std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
+  if (this->device_sensor_ != nullptr) this->device_sensor_->publish_state("NONE");
+  this->publish_status_();
+  this->publish_event_("BT: saved speaker forgotten");
 }
 
 bool BtAudioBridge::is_connected() { return this->connected_; }
