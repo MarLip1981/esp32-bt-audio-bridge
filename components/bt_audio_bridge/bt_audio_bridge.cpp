@@ -2,6 +2,7 @@
 
 #include "esphome/core/log.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -61,6 +62,27 @@ static const char *const NVS_NAME_KEY = "speaker_name";
 static const char *const NVS_MAC_KEY = "speaker_mac";
 BtAudioBridge *global_bt_audio_bridge = nullptr;
 
+void BtAudioBridgeA2DPSource::app_gap_callback(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param) {
+  BluetoothA2DPSource::app_gap_callback(event, param);
+  if (this->owner_ == nullptr || param == nullptr) return;
+
+  switch (event) {
+    case ESP_BT_GAP_READ_ACL_REAL_RSSI_EVT:
+      this->owner_->on_real_rssi(static_cast<int>(param->read_acl_real_rssi.rssi));
+      break;
+    default:
+      break;
+  }
+}
+
+void BtAudioBridgeA2DPSource::bt_av_notify_evt_handler(uint8_t event, esp_avrc_rn_param_t *param) {
+  BluetoothA2DPSource::bt_av_notify_evt_handler(event, param);
+  if (this->owner_ == nullptr || param == nullptr) return;
+  if (event == ESP_AVRC_RN_BATTERY_STATUS_CHANGE) {
+    this->owner_->on_battery_status(param->batt);
+  }
+}
+
 static bool bt_ssid_callback(const char *ssid, esp_bd_addr_t address, int rrsi) {
   if (global_bt_audio_bridge == nullptr) return true;
   char mac[18];
@@ -79,6 +101,8 @@ static void bt_discovery_callback(esp_bt_gap_discovery_state_t discovery_mode) {
     global_bt_audio_bridge->on_discovery_stopped();
   }
 }
+
+BtAudioBridge::BtAudioBridge() : a2dp_source_(this) {}
 
 void BtAudioBridge::on_device_found(const char *name, const char *mac, int rssi) {
   if (name == nullptr || mac == nullptr) return;
@@ -217,6 +241,79 @@ void BtAudioBridge::sync_current_speaker_() {
   if (changed) this->save_speaker_();
 }
 
+void BtAudioBridge::on_real_rssi(int rssi) {
+  ESP_LOGI(TAG, "Connected speaker real RSSI: %d dBm", rssi);
+  if (this->rssi_sensor_ != nullptr) this->rssi_sensor_->publish_state(static_cast<float>(rssi));
+}
+
+void BtAudioBridge::on_battery_status(esp_avrc_batt_stat_t status) {
+  const char *text = "UNKNOWN";
+  switch (status) {
+    case ESP_AVRC_BATT_NORMAL: text = "NORMAL"; break;
+    case ESP_AVRC_BATT_WARNING: text = "LOW"; break;
+    case ESP_AVRC_BATT_CRITICAL: text = "CRITICAL"; break;
+    case ESP_AVRC_BATT_EXTERNAL: text = "EXTERNAL POWER"; break;
+    case ESP_AVRC_BATT_FULL_CHARGE: text = "FULL"; break;
+    default: break;
+  }
+  std::strncpy(this->battery_status_, text, sizeof(this->battery_status_) - 1);
+  this->battery_status_[sizeof(this->battery_status_) - 1] = '\0';
+  ESP_LOGI(TAG, "Speaker battery status: %s", this->battery_status_);
+  if (this->battery_sensor_ != nullptr) this->battery_sensor_->publish_state(this->battery_status_);
+}
+
+int32_t BtAudioBridge::test_tone_callback_(uint8_t *data, int32_t len) {
+  if (global_bt_audio_bridge == nullptr) {
+    std::memset(data, 0, static_cast<size_t>(len));
+    return len;
+  }
+  return global_bt_audio_bridge->generate_test_tone_(data, len);
+}
+
+int32_t BtAudioBridge::generate_test_tone_(uint8_t *data, int32_t len) {
+  if (!this->test_tone_active_ || millis() >= this->test_tone_until_) {
+    this->test_tone_active_ = false;
+    std::memset(data, 0, static_cast<size_t>(len));
+    return len;
+  }
+
+  constexpr double sample_rate = 44100.0;
+  constexpr double frequency = 880.0;
+  constexpr double two_pi = 6.28318530717958647692;
+  constexpr int bytes_per_sample = 4;  // 16-bit stereo
+  const int samples = len / bytes_per_sample;
+  auto *out = reinterpret_cast<int16_t *>(data);
+
+  for (int i = 0; i < samples; i++) {
+    const double sample = std::sin(two_pi * frequency * static_cast<double>(this->test_tone_phase_) / sample_rate) * 0.18;
+    const int16_t value = static_cast<int16_t>(sample * 32767.0);
+    out[i * 2] = value;
+    out[i * 2 + 1] = value;
+    this->test_tone_phase_++;
+  }
+
+  const int used = samples * bytes_per_sample;
+  if (used < len) std::memset(data + used, 0, static_cast<size_t>(len - used));
+  return len;
+}
+
+void BtAudioBridge::start_test_tone() {
+  if (!this->a2dp_started_ || !this->a2dp_source_.is_active()) {
+    ESP_LOGW(TAG, "Test tone requested while Bluetooth speaker is not connected");
+    return;
+  }
+  this->test_tone_phase_ = 0;
+  this->test_tone_until_ = millis() + 700;
+  this->test_tone_active_ = true;
+  this->a2dp_source_.set_data_callback(&BtAudioBridge::test_tone_callback_);
+  this->publish_event_("AUDIO: connection confirmation tone");
+}
+
+void BtAudioBridge::stop_test_tone() {
+  this->test_tone_active_ = false;
+  this->test_tone_until_ = 0;
+}
+
 void BtAudioBridge::setup() {
   global_bt_audio_bridge = this;
   ESP_LOGI(TAG, "Bluetooth A2DP Source ready");
@@ -236,7 +333,10 @@ void BtAudioBridge::setup() {
   this->scan_cycles_ = 0;
   this->device_count_ = 0;
   this->devices_dirty_ = false;
+  this->last_rssi_request_ = 0;
+  this->test_tone_active_ = false;
   std::strncpy(this->status_, "READY", sizeof(this->status_) - 1);
+  if (this->battery_sensor_ != nullptr) this->battery_sensor_->publish_state("UNKNOWN");
   this->publish_status_();
   this->publish_event_("BOOT: component ready");
   if (this->reset_reason_sensor_ != nullptr) this->reset_reason_sensor_->publish_state(this->reset_reason_());
@@ -265,12 +365,26 @@ void BtAudioBridge::loop() {
   if (!this->a2dp_started_) return;
   const bool active = this->a2dp_source_.is_active();
   if (active) {
-    if (!this->connected_) this->publish_event_("BT: speaker connected");
+    if (!this->connected_) {
+      this->publish_event_("BT: speaker connected");
+      this->start_test_tone();
+      this->last_rssi_request_ = 0;
+    }
     this->connected_ = true;
     this->scanning_ = false;
     std::strncpy(this->status_, "CONNECTED", sizeof(this->status_) - 1);
     this->sync_current_speaker_();
+
+    if (now - this->last_rssi_request_ >= 5000) {
+      esp_bd_addr_t *address = this->a2dp_source_.get_last_peer_address();
+      if (address != nullptr) {
+        esp_err_t err = esp_bt_gap_read_acl_real_rssi(*address);
+        if (err != ESP_OK) ESP_LOGW(TAG, "Real RSSI request failed: %s", esp_err_to_name(err));
+      }
+      this->last_rssi_request_ = now;
+    }
   } else {
+    this->test_tone_active_ = false;
     if (this->connected_) this->publish_event_("BT: speaker disconnected");
     this->connected_ = false;
     if (this->a2dp_source_.is_discovery_active()) {
@@ -291,6 +405,9 @@ void BtAudioBridge::dump_config() {
   ESP_LOGCONFIG(TAG, "  SSP: enabled");
   ESP_LOGCONFIG(TAG, "  Auto reconnect: enabled");
   ESP_LOGCONFIG(TAG, "  HA scan slots: %u", static_cast<unsigned>(this->device_slot_count_));
+  ESP_LOGCONFIG(TAG, "  Connected RSSI: enabled");
+  ESP_LOGCONFIG(TAG, "  AVRCP battery status: enabled");
+  ESP_LOGCONFIG(TAG, "  Connection chime: 700 ms");
 }
 
 void BtAudioBridge::start_scan() {
@@ -323,6 +440,7 @@ void BtAudioBridge::stop_scan() {
   this->connected_ = false;
   this->scanning_ = false;
   this->scan_cycles_ = 0;
+  this->test_tone_active_ = false;
   std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
   this->publish_status_();
   this->publish_event_("SCAN: stopped manually - results kept in Home Assistant");
@@ -385,6 +503,7 @@ void BtAudioBridge::disconnect() {
   this->connected_ = false;
   this->scanning_ = false;
   this->scan_cycles_ = 0;
+  this->test_tone_active_ = false;
   std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
   this->publish_status_();
 }
@@ -411,8 +530,11 @@ void BtAudioBridge::forget_speaker() {
   this->connected_ = false;
   this->scanning_ = false;
   this->scan_cycles_ = 0;
+  this->test_tone_active_ = false;
   std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
   if (this->device_sensor_ != nullptr) this->device_sensor_->publish_state("NONE");
+  if (this->rssi_sensor_ != nullptr) this->rssi_sensor_->publish_state(NAN);
+  if (this->battery_sensor_ != nullptr) this->battery_sensor_->publish_state("UNKNOWN");
   this->publish_status_();
   this->publish_event_("BT: saved speaker forgotten");
 }
@@ -438,6 +560,8 @@ void BtAudioBridge::start_a2dp_() {
   this->a2dp_source_.set_auto_reconnect(true, 10);
   this->a2dp_source_.set_ssid_callback(bt_ssid_callback);
   this->a2dp_source_.set_discovery_mode_callback(bt_discovery_callback);
+  this->a2dp_source_.set_avrc_rn_events({ESP_AVRC_RN_VOLUME_CHANGE, ESP_AVRC_RN_BATTERY_STATUS_CHANGE});
+  this->a2dp_source_.set_data_callback(&BtAudioBridge::test_tone_callback_);
   this->a2dp_source_.start();
   this->a2dp_started_ = true;
 }
