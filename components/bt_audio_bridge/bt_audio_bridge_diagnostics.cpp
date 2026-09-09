@@ -3,6 +3,7 @@
 #include "bt_audio_bridge.h"
 #include "esphome/core/log.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -10,7 +11,6 @@
 #include <esp_clk.h>
 #include <esp_heap_caps.h>
 #include <esp_wifi.h>
-#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
@@ -25,7 +25,6 @@ static const char *bt_controller_status_text(esp_bt_controller_status_t status) 
     case ESP_BT_CONTROLLER_STATUS_IDLE: return "IDLE";
     case ESP_BT_CONTROLLER_STATUS_INITED: return "INITED";
     case ESP_BT_CONTROLLER_STATUS_ENABLED: return "ENABLED";
-    case ESP_BT_CONTROLLER_STATUS_NUM: return "UNKNOWN";
     default: return "DISABLED/UNKNOWN";
   }
 }
