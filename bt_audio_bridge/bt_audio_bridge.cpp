@@ -211,20 +211,16 @@ void BtAudioBridge::sync_current_speaker_() {
                 (*address)[0], (*address)[1], (*address)[2],
                 (*address)[3], (*address)[4], (*address)[5]);
 
-  const char *library_name = this->a2dp_source_.get_name();
-  if (library_name != nullptr && std::strlen(library_name) > 0) {
-    std::strncpy(this->selected_name_, library_name, sizeof(this->selected_name_) - 1);
-    this->selected_name_[sizeof(this->selected_name_) - 1] = '\0';
-  }
-
   const bool mac_changed = std::strncmp(this->selected_mac_, mac, sizeof(this->selected_mac_)) != 0;
   if (mac_changed) {
     std::strncpy(this->selected_mac_, mac, sizeof(this->selected_mac_) - 1);
     this->selected_mac_[sizeof(this->selected_mac_) - 1] = '\0';
+    this->save_speaker_(this->selected_name_, this->selected_mac_);
     if (this->device_sensor_ != nullptr) this->device_sensor_->publish_state(this->selected_mac_);
+    ESP_LOGI(TAG, "Current speaker synchronized after reconnect: %s (%s)",
+             this->selected_name_[0] != '\0' ? this->selected_name_ : "unknown",
+             this->selected_mac_);
   }
-
-  this->save_speaker_(this->selected_name_, this->selected_mac_);
 
   if (this->current_speaker_sensor_ != nullptr) {
     char state[100];
@@ -268,9 +264,8 @@ void BtAudioBridge::setup() {
     this->reset_reason_sensor_->publish_state(this->reset_reason_());
   if (this->device_sensor_ != nullptr)
     this->device_sensor_->publish_state(this->selected_mac_[0] != '\0' ? this->selected_mac_ : "NONE");
-  if (this->current_speaker_sensor_ != nullptr) {
+  if (this->current_speaker_sensor_ != nullptr)
     this->current_speaker_sensor_->publish_state("URUCHAMIANIE");
-  }
   for (size_t i = 0; i < this->device_slot_count_; i++) this->publish_device_(i);
 }
 
@@ -487,6 +482,7 @@ const char *BtAudioBridge::reset_reason_() {
     case ESP_RST_SW: return "SOFTWARE";
     case ESP_RST_PANIC: return "PANIC";
     case ESP_RST_INT_WDT: return "INT_WDT";
+    case ESP_RST_TASK_WDT: return "TASK_WDT";
     case ESP_RST_WDT: return "WDT";
     case ESP_RST_BROWNOUT: return "BROWNOUT";
     case ESP_RST_SDIO: return "SDIO";
