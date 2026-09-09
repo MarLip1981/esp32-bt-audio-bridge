@@ -201,8 +201,6 @@ void BtAudioBridge::sync_current_speaker_() {
     this->selected_mac_[sizeof(this->selected_mac_) - 1] = '\0';
   }
 
-  // On automatic reconnect the bundled A2DP library can expose an empty or
-  // placeholder name. Never let that replace the trusted name saved from scan.
   const bool library_name_valid = library_name != nullptr && library_name[0] != '\0' &&
                                   std::strcmp(library_name, "UNKNOWN") != 0 &&
                                   std::strcmp(library_name, "unknown") != 0 &&
@@ -350,7 +348,7 @@ void BtAudioBridge::connect_to(const char *mac) {
   unsigned int b[6];
   if (std::sscanf(mac, "%02x:%02x:%02x:%02x:%02x:%02x", &b[0], &b[1], &b[2], &b[3], &b[4], &b[5]) != 6) {
     ESP_LOGE(TAG, "Invalid Bluetooth MAC address: %s", mac);
-    this->publish_event_("CONNECT: invalid MAC address");
+    this->publish_event_("CONNECT: invalid Bluetooth MAC address");
     return;
   }
   esp_bd_addr_t address = {static_cast<uint8_t>(b[0]), static_cast<uint8_t>(b[1]), static_cast<uint8_t>(b[2]), static_cast<uint8_t>(b[3]), static_cast<uint8_t>(b[4]), static_cast<uint8_t>(b[5])};
@@ -459,6 +457,7 @@ const char *BtAudioBridge::reset_reason_() {
     case ESP_RST_SW: return "SOFTWARE";
     case ESP_RST_PANIC: return "PANIC";
     case ESP_RST_INT_WDT: return "INT_WDT";
+    case ESP_RST_TASK_WDT: return "TASK_WDT";
     case ESP_RST_WDT: return "WDT";
     case ESP_RST_BROWNOUT: return "BROWNOUT";
     case ESP_RST_SDIO: return "SDIO";
