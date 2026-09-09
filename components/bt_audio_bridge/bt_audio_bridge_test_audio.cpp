@@ -9,7 +9,7 @@ namespace bt_audio_bridge {
 
 static const char *const TEST_AUDIO_TAG = "bt_audio_bridge";
 
-BtAudioBridge::BtAudioBridge() {
+BtAudioBridge::BtAudioBridge() : a2dp_source_(this) {
   // The A2DP library calls this callback whenever the Bluetooth speaker
   // asks for PCM samples. Normally we return 0 (no audio). During the
   // test tone we generate a short 440 Hz square wave.
