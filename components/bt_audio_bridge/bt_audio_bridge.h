@@ -114,6 +114,7 @@ class BtAudioBridge : public Component {
 
   int scan_cycles_{0};
   unsigned long last_status_check_{0};
+  unsigned long last_rssi_request_{0};
 };
 
 }  // namespace bt_audio_bridge
