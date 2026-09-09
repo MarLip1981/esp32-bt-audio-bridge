@@ -131,7 +131,7 @@ void BtAudioBridge::clear_devices_() {
   for (size_t i = 0; i < MAX_DEVICES; i++) {
     this->devices_[i] = DeviceInfo{};
     if (this->device_sensors_[i] != nullptr) {
-      this->device_sensors_[i]->publish_state("BRAK URZADZENIA");
+      this->device_sensors_[i]->publish_state("BRAK URZĄDZENIA");
     }
   }
   this->device_count_ = 0;
@@ -142,7 +142,7 @@ void BtAudioBridge::publish_device_(size_t index) {
   if (index >= this->device_slot_count_ || this->device_sensors_[index] == nullptr) return;
 
   if (index >= this->device_count_ || !this->devices_[index].used) {
-    this->device_sensors_[index]->publish_state("BRAK URZADZENIA");
+    this->device_sensors_[index]->publish_state("BRAK URZĄDZENIA");
     return;
   }
 
@@ -262,7 +262,6 @@ void BtAudioBridge::setup() {
   this->device_count_ = 0;
   this->devices_dirty_ = false;
   std::strncpy(this->status_, "READY", sizeof(this->status_) - 1);
-  this->load_saved_speaker_();
   this->publish_status_();
   this->publish_event_("BOOT: component ready");
   if (this->reset_reason_sensor_ != nullptr)
@@ -270,14 +269,7 @@ void BtAudioBridge::setup() {
   if (this->device_sensor_ != nullptr)
     this->device_sensor_->publish_state(this->selected_mac_[0] != '\0' ? this->selected_mac_ : "NONE");
   if (this->current_speaker_sensor_ != nullptr) {
-    if (this->selected_mac_[0] != '\0') {
-      char state[100];
-      const char *name = this->selected_name_[0] != '\0' ? this->selected_name_ : "NIEZNANY GŁOŚNIK";
-      std::snprintf(state, sizeof(state), "%s | %s", name, this->selected_mac_);
-      this->current_speaker_sensor_->publish_state(state);
-    } else {
-      this->current_speaker_sensor_->publish_state("BRAK ZAPISANEGO GŁOŚNIKA");
-    }
+    this->current_speaker_sensor_->publish_state("URUCHAMIANIE");
   }
   for (size_t i = 0; i < this->device_slot_count_; i++) this->publish_device_(i);
 }
@@ -456,6 +448,21 @@ void BtAudioBridge::start_a2dp_() {
     return;
   }
 
+  // NVS is initialized now, so restore our human-readable speaker name and MAC.
+  this->load_saved_speaker_();
+  if (this->device_sensor_ != nullptr)
+    this->device_sensor_->publish_state(this->selected_mac_[0] != '\0' ? this->selected_mac_ : "NONE");
+  if (this->current_speaker_sensor_ != nullptr) {
+    char state[100];
+    if (this->selected_mac_[0] != '\0') {
+      const char *name = this->selected_name_[0] != '\0' ? this->selected_name_ : "NIEZNANY GŁOŚNIK";
+      std::snprintf(state, sizeof(state), "%s | %s", name, this->selected_mac_);
+    } else {
+      std::snprintf(state, sizeof(state), "BRAK ZAPISANEGO GŁOŚNIKA");
+    }
+    this->current_speaker_sensor_->publish_state(state);
+  }
+
   this->a2dp_source_.set_local_name("ESP32 BT Audio Bridge");
   this->a2dp_source_.set_ssp_enabled(true);
   this->a2dp_source_.set_auto_reconnect(true, 10);
@@ -463,7 +470,6 @@ void BtAudioBridge::start_a2dp_() {
   this->a2dp_source_.set_discovery_mode_callback(bt_discovery_callback);
   this->a2dp_source_.start();
   this->a2dp_started_ = true;
-  this->sync_current_speaker_();
 }
 
 void BtAudioBridge::publish_status_() {
@@ -481,7 +487,6 @@ const char *BtAudioBridge::reset_reason_() {
     case ESP_RST_SW: return "SOFTWARE";
     case ESP_RST_PANIC: return "PANIC";
     case ESP_RST_INT_WDT: return "INT_WDT";
-    case ESP_RST_TASK_WDT: return "TASK_WDT";
     case ESP_RST_WDT: return "WDT";
     case ESP_RST_BROWNOUT: return "BROWNOUT";
     case ESP_RST_SDIO: return "SDIO";
