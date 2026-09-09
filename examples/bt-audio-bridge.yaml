@@ -14,6 +14,8 @@
 #   - skanowanie urządzeń: OK
 #   - lista urządzeń w HA: OK
 #   - połączenie z wybranym głośnikiem: OK
+#   - zapamiętanie głośnika: OK
+#   - synchronizacja aktualnego głośnika po auto-reconnect: DODANA
 #   - testowe audio 440 Hz: DODANE - TERAZ TESTUJEMY
 #   - właściwy dźwięk z Home Assistant: NASTĘPNY ETAP
 #
@@ -21,11 +23,12 @@
 #   1. Skanowanie / wybór / połączenie                         [DZIAŁA]
 #   2. Testowe audio przez A2DP                                [TERAZ]
 #   3. Media Player / audio z Home Assistant
-#   4. Zapamiętanie głośnika + auto-reconnect
-#   5. Rozłączanie / zapominanie urządzenia
-#   6. Diagnostyka Bluetooth RSSI + Wi-Fi RSSI + statusy
-#   7. TTS
-#   8. Docelowy, uporządkowany interfejs HA
+#   4. Zapamiętanie głośnika + auto-reconnect                  [DZIAŁA]
+#   5. Synchronizacja informacji o aktualnym głośniku          [DZIAŁA]
+#   6. Rozłączanie / zapominanie urządzenia
+#   7. Diagnostyka Bluetooth RSSI + Wi-Fi RSSI + statusy
+#   8. TTS
+#   9. Docelowy, uporządkowany interfejs HA
 #
 # UWAGA: przykład jest bez prawdziwych sekretów. Wi-Fi korzysta z !secret.
 # ============================================================================
@@ -34,18 +37,12 @@ esphome:
   name: bt-audio-bridge
   friendly_name: BT audio bridge
 
-esp32:
-  variant: esp32
-  framework:
-    type: arduino
-
 external_components:
   - source: github://MarLip1981/esp32-bt-audio-bridge
     components: [bt_audio_bridge]
     refresh: 1s
 
 bt_audio_bridge:
-  # ID używane przez przyciski lambda poniżej.
   id: bt_audio_bridge_id
 
   status:
@@ -60,12 +57,9 @@ bt_audio_bridge:
   device:
     name: "Bluetooth Selected Device MAC"
 
-  # --------------------------------------------------------------------------
-  # WYNIKI SKANOWANIA
-  # --------------------------------------------------------------------------
-  # Maksymalnie 8 slotów. Na tym etapie są to techniczne encje tekstowe.
-  # Docelowo pokażemy je w HA w uporządkowanej sekcji "Wykryte urządzenia".
-  # --------------------------------------------------------------------------
+  current_speaker:
+    name: "Bluetooth Current Speaker"
+
   devices:
     - text_sensor:
         name: "Bluetooth Device 1"
@@ -101,13 +95,6 @@ wifi:
 
 captive_portal:
 
-# ============================================================================
-# PRZYCISKI TESTOWE / STEROWANIE
-# ============================================================================
-#
-# Connect 1 odpowiada devices[0], Connect 2 -> devices[1], itd.
-# Te przyciski są warstwą testową. Docelowo znikną z głównego panelu HA.
-# ============================================================================
 button:
   - platform: template
     name: "Skanuj Bluetooth"
@@ -179,13 +166,6 @@ button:
       - lambda: |-
           id(bt_audio_bridge_id).connect_slot(7);
 
-  # --------------------------------------------------------------------------
-  # AUDIO TEST
-  # --------------------------------------------------------------------------
-  # Po połączeniu głośnika naciśnij ten przycisk.
-  # ESP32 wygeneruje około 3 sekundy tonu testowego ~441 Hz.
-  # Jeżeli głośnik wyda dźwięk, mamy potwierdzenie całej ścieżki:
-  # ESP32 -> A2DP -> Bluetooth -> głośnik.
   - platform: template
     name: "Test Audio"
     icon: "mdi:volume-high"
@@ -206,22 +186,3 @@ button:
     on_press:
       - lambda: |-
           id(bt_audio_bridge_id).disconnect();
-
-# ============================================================================
-# NOTATKI DLA DALSZEGO ROZWOJU
-# ============================================================================
-#
-# - Nie usuwamy biblioteki ESP32-A2DP. Jest silnikiem Bluetooth Classic A2DP.
-# - Test audio korzysta z callbacku PCM biblioteki A2DP, a nie z osobnego
-#   silnika Bluetooth.
-# - Przed podaniem danych audio komunikaty UNDERFLOW są spodziewane.
-# - Po uruchomieniu Test Audio UNDERFLOW powinien zniknąć podczas odtwarzania
-#   albo przynajmniej przestać być skutkiem braku danych audio.
-# - Zapamiętywanie MAC, auto-reconnect i "Zapomnij" są jeszcze do zrobienia.
-# - Docelowy panel HA będzie podzielony na:
-#       STATUS
-#       AKTUALNY GŁOŚNIK
-#       WYKRYTE URZĄDZENIA
-#       AUDIO
-#       DIAGNOSTYKA
-# ============================================================================
