@@ -3,7 +3,7 @@ from pathlib import Path
 import esphome.codegen as cg
 import esphome.config_validation as cv
 
-from esphome.components import text_sensor
+from esphome.components import sensor, text_sensor
 from esphome.const import CONF_ID
 
 from esphome.components.esp32 import (
@@ -16,10 +16,12 @@ CONF_STATUS = "status"
 CONF_EVENT = "event"
 CONF_RESET_REASON = "reset_reason"
 CONF_DEVICE = "device"
+CONF_RSSI = "rssi"
+CONF_BATTERY = "battery"
 CONF_DEVICES = "devices"
 CONF_TEXT_SENSOR = "text_sensor"
 
-AUTO_LOAD = ["text_sensor"]
+AUTO_LOAD = ["sensor", "text_sensor"]
 DEPENDENCIES = ["wifi"]
 
 bt_audio_bridge_ns = cg.esphome_ns.namespace("bt_audio_bridge")
@@ -39,6 +41,8 @@ CONFIG_SCHEMA = cv.Schema({
     cv.Optional(CONF_EVENT): text_sensor.text_sensor_schema(),
     cv.Optional(CONF_RESET_REASON): text_sensor.text_sensor_schema(),
     cv.Optional(CONF_DEVICE): text_sensor.text_sensor_schema(),
+    cv.Optional(CONF_RSSI): sensor.sensor_schema(unit_of_measurement="dBm", accuracy_decimals=0),
+    cv.Optional(CONF_BATTERY): text_sensor.text_sensor_schema(),
     cv.Optional(CONF_DEVICES, default=[]): cv.All(
         cv.ensure_list(DEVICE_SLOT_SCHEMA),
         cv.Length(max=8),
@@ -47,12 +51,8 @@ CONFIG_SCHEMA = cv.Schema({
 
 
 async def to_code(config):
-    # ESP32-A2DP uses Bluetooth Classic from ESP-IDF.
-    # ESPHome 2026.2+ excludes unused IDF components by default.
     include_builtin_idf_component("bt")
 
-    # ESP-IDF disables Classic Bluetooth and A2DP by default. These options
-    # are required for the esp_a2dp_api.h API used by ESP32-A2DP.
     add_idf_sdkconfig_option("CONFIG_BT_ENABLED", True)
     add_idf_sdkconfig_option("CONFIG_BTDM_CTRL_MODE_BLE_ONLY", False)
     add_idf_sdkconfig_option("CONFIG_BTDM_CTRL_MODE_BR_EDR_ONLY", True)
@@ -61,6 +61,7 @@ async def to_code(config):
     add_idf_sdkconfig_option("CONFIG_BT_CLASSIC_ENABLED", True)
     add_idf_sdkconfig_option("CONFIG_BT_A2DP_ENABLE", True)
     add_idf_sdkconfig_option("CONFIG_BT_BLE_ENABLED", False)
+    add_idf_sdkconfig_option("CONFIG_BT_CLASSIC_ENABLE_POWER_CTRL_VSC", True)
 
     add_idf_component(
         name="ESP32-A2DP",
@@ -86,6 +87,14 @@ async def to_code(config):
         sensor = await text_sensor.new_text_sensor(device_config)
         cg.add(var.set_device_sensor(sensor))
 
+    if rssi_config := config.get(CONF_RSSI):
+        rssi_sensor = await sensor.new_sensor(rssi_config)
+        cg.add(var.set_rssi_sensor(rssi_sensor))
+
+    if battery_config := config.get(CONF_BATTERY):
+        battery_sensor = await text_sensor.new_text_sensor(battery_config)
+        cg.add(var.set_battery_sensor(battery_sensor))
+
     for slot in config.get(CONF_DEVICES, []):
-        sensor = await text_sensor.new_text_sensor(slot[CONF_TEXT_SENSOR])
-        cg.add(var.add_device_slot(sensor))
+        slot_sensor = await text_sensor.new_text_sensor(slot[CONF_TEXT_SENSOR])
+        cg.add(var.add_device_slot(slot_sensor))
