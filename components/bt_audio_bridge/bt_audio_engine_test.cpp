@@ -1,8 +1,8 @@
 #include "bt_audio_bridge.h"
-#include "bt_audio_pcm_source.h"
 
 #include "esphome/core/log.h"
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 
@@ -35,7 +35,7 @@ void BtAudioBridge::start_engine_test() {
   BaseType_t result = xTaskCreate(
       &BtAudioBridge::engine_test_task_,
       "bt_audio_engine",
-      4096,
+      2048,
       this,
       2,
       nullptr);
@@ -48,26 +48,40 @@ void BtAudioBridge::start_engine_test() {
 
 void BtAudioBridge::engine_test_task_(void *arg) {
   auto *self = static_cast<BtAudioBridge *>(arg);
+
+  // Lightweight synthetic PCM source used only by this diagnostic test.
+  // It feeds the same Audio Engine used by the future production pipeline.
+  constexpr uint32_t sample_rate = 44100;
+  constexpr uint32_t bytes_per_frame = 4;  // 16-bit stereo
   constexpr uint32_t test_duration_ms = 5000;
   constexpr uint32_t chunk_ms = 10;
   constexpr uint32_t prefill_ms = 150;
-  constexpr size_t bytes_per_second = BtAudioPcmSource::SAMPLE_RATE * BtAudioPcmSource::BYTES_PER_FRAME;
-  constexpr size_t chunk_bytes = bytes_per_second * chunk_ms / 1000U;
   constexpr uint8_t target_fill_percent = 70;
+  constexpr float frequency = 440.0f;
+  constexpr float amplitude = 0.10f;
+  constexpr float two_pi = 6.28318530717958647692f;
+  constexpr size_t chunk_bytes = (sample_rate * bytes_per_frame * chunk_ms) / 1000U;
 
   uint8_t pcm[chunk_bytes];
-  BtAudioPcmSource source;
-  source.reset(440.0f, 0.10f);
+  float phase = 0.0f;
+  const float phase_step = two_pi * frequency / static_cast<float>(sample_rate);
 
-  auto generate_chunk = [&]() {
-    return source.generate(pcm, sizeof(pcm));
+  auto generate_chunk = [&]() -> size_t {
+    auto *out = reinterpret_cast<int16_t *>(pcm);
+    constexpr size_t frames = chunk_bytes / bytes_per_frame;
+    for (size_t i = 0; i < frames; i++) {
+      const int16_t value = static_cast<int16_t>(std::sin(phase) * 32767.0f * amplitude);
+      out[i * 2U] = value;
+      out[i * 2U + 1U] = value;
+      phase += phase_step;
+      if (phase >= two_pi) phase -= two_pi;
+    }
+    return chunk_bytes;
   };
 
-  // Fill the ring buffer before allowing the A2DP callback to consume it.
   const int prefill_chunks = prefill_ms / chunk_ms;
   for (int chunk = 0; chunk < prefill_chunks; chunk++) {
-    const size_t generated = generate_chunk();
-    self->audio_engine_.write(pcm, generated);
+    self->audio_engine_.write(pcm, generate_chunk());
   }
 
   self->engine_test_active_ = true;
@@ -76,12 +90,8 @@ void BtAudioBridge::engine_test_task_(void *arg) {
   const TickType_t start = xTaskGetTickCount();
   const TickType_t duration = pdMS_TO_TICKS(test_duration_ms);
   while (self->engine_test_active_ && (xTaskGetTickCount() - start) < duration) {
-    // Keep a healthy amount of PCM queued without trying to pace the producer
-    // to wall-clock time. The same producer interface will later be fed by
-    // network/decoder sources instead of this synthetic source.
     if (self->audio_engine_.fill_percent() < target_fill_percent) {
-      const size_t generated = generate_chunk();
-      self->audio_engine_.write(pcm, generated);
+      self->audio_engine_.write(pcm, generate_chunk());
     } else {
       vTaskDelay(pdMS_TO_TICKS(1));
     }
