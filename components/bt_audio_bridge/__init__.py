@@ -91,7 +91,7 @@ CONFIG_SCHEMA = cv.Schema({
     cv.Optional(CONF_EVENT): text_sensor.text_sensor_schema(),
     cv.Optional(CONF_RESET_REASON): text_sensor.text_sensor_schema(),
     cv.Optional(CONF_DEVICE): text_sensor.text_sensor_schema(),
-    cv.Optional(CONF_RSSI): sensor.sensor_schema(unit_of_measurement="dBm", accuracy_decimals=0),
+    cv.Optional(CONF_RSSI): sensor.sensor_schema(unit_of_measureMENT="dBm", accuracy_decimals=0),
     cv.Optional(CONF_BATTERY): text_sensor.text_sensor_schema(),
     cv.Optional(CONF_DEVICES, default=[]): cv.All(
         cv.ensure_list(DEVICE_SLOT_SCHEMA),
@@ -114,11 +114,8 @@ async def _new_text_sensor(config, key, setter, var):
 
 
 async def to_code(config):
-    # bt_http_wav.cpp includes Arduino's HTTPClient directly. Declare the
-    # library here so ESPHome adds its include path to this component.
-    cg.add_library("HTTPClient", None)
-
     include_builtin_idf_component("bt")
+    include_builtin_idf_component("esp_http_client")
 
     add_idf_sdkconfig_option("CONFIG_BT_ENABLED", True)
     add_idf_sdkconfig_option("CONFIG_BTDM_CTRL_MODE_BLE_ONLY", False)
@@ -129,17 +126,6 @@ async def to_code(config):
     add_idf_sdkconfig_option("CONFIG_BT_A2DP_ENABLE", True)
     add_idf_sdkconfig_option("CONFIG_BT_BLE_ENABLED", False)
     add_idf_sdkconfig_option("CONFIG_BT_CLASSIC_ENABLE_POWER_CTRL_VSC", True)
-
-    # Enable low-overhead FreeRTOS runtime statistics so the diagnostics
-    # component can report CPU load from idle-task runtime.
-    add_idf_sdkconfig_option("CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS", True)
-    add_idf_sdkconfig_option("CONFIG_FREERTOS_USE_STATS_FORMATTING_FUNCTIONS", True)
-    add_idf_sdkconfig_option("CONFIG_FREERTOS_USE_TRACE_FACILITY", True)
-    add_idf_sdkconfig_option("CONFIG_FREERTOS_INCLUDE_xTaskGetIdleTaskHandle", True)
-    add_idf_sdkconfig_option("CONFIG_FREERTOS_RUN_TIME_STATS_USING_ESP_TIMER", True)
-    add_idf_sdkconfig_option("CONFIG_FREERTOS_RUN_TIME_STATS_USING_CPU_CLK", False)
-    add_idf_sdkconfig_option("CONFIG_FREERTOS_RUN_TIME_COUNTER_TYPE_U64", True)
-    add_idf_sdkconfig_option("CONFIG_FREERTOS_RUN_TIME_COUNTER_TYPE_U32", False)
 
     add_idf_component(
         name="ESP32-A2DP",
