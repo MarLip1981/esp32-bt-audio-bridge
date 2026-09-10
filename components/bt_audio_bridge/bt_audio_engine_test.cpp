@@ -35,7 +35,7 @@ void BtAudioBridge::start_engine_test() {
   BaseType_t result = xTaskCreate(
       &BtAudioBridge::engine_test_task_,
       "bt_audio_engine",
-      2048,
+      4096,
       this,
       2,
       nullptr);
