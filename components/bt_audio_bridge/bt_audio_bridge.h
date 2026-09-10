@@ -5,6 +5,8 @@
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
 
+#include "bt_audio_engine.h"
+
 #include <BluetoothA2DPSource.h>
 
 namespace esphome {
@@ -58,6 +60,7 @@ class BtAudioBridge : public Component {
   void forget_speaker();
   void start_test_tone();
   void stop_test_tone();
+  void start_engine_test();
   void on_discovery_stopped();
   void on_device_found(const char *name, const char *mac, int rssi);
   void on_real_rssi(int rssi);
@@ -75,6 +78,8 @@ class BtAudioBridge : public Component {
   };
 
   static int32_t test_tone_callback_(uint8_t *data, int32_t len);
+  static int32_t engine_audio_callback_(uint8_t *data, int32_t len);
+  static void engine_test_task_(void *arg);
   int32_t generate_test_tone_(uint8_t *data, int32_t len);
   void publish_status_();
   void publish_event_(const char *event);
@@ -87,6 +92,7 @@ class BtAudioBridge : public Component {
   const char *reset_reason_();
 
   BtAudioBridgeA2DPSource a2dp_source_;
+  BtAudioEngine audio_engine_;
   text_sensor::TextSensor *status_sensor_{nullptr};
   text_sensor::TextSensor *event_sensor_{nullptr};
   text_sensor::TextSensor *reset_reason_sensor_{nullptr};
@@ -104,6 +110,7 @@ class BtAudioBridge : public Component {
   bool a2dp_started_{false};
   bool scan_requested_{false};
   bool test_tone_active_{false};
+  volatile bool engine_test_active_{false};
   uint32_t test_tone_until_{0};
   uint32_t test_tone_phase_{0};
 
