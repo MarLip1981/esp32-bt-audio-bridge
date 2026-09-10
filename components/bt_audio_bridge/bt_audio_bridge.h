@@ -109,8 +109,10 @@ class BtAudioBridge : public Component {
   bool scanning_{false};
   bool a2dp_started_{false};
   bool scan_requested_{false};
+  bool auto_connect_pending_{false};
   bool test_tone_active_{false};
   volatile bool engine_test_active_{false};
+  uint32_t auto_connect_started_{0};
   uint32_t test_tone_until_{0};
   uint32_t test_tone_phase_{0};
 
