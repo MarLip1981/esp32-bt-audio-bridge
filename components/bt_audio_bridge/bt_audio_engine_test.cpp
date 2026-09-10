@@ -36,7 +36,7 @@ void BtAudioBridge::start_engine_test() {
       "bt_audio_engine",
       4096,
       this,
-      1,
+      2,
       nullptr);
 
   if (result != pdPASS) {
@@ -49,21 +49,20 @@ void BtAudioBridge::engine_test_task_(void *arg) {
   auto *self = static_cast<BtAudioBridge *>(arg);
   constexpr uint32_t test_duration_ms = 5000;
   constexpr uint32_t chunk_ms = 10;
-  constexpr uint32_t prefill_ms = 100;
+  constexpr uint32_t prefill_ms = 150;
   constexpr size_t bytes_per_second = 44100U * 2U * 2U;
   constexpr size_t chunk_bytes = bytes_per_second * chunk_ms / 1000U;
   constexpr float sample_rate = 44100.0f;
   constexpr float frequency = 440.0f;
   constexpr float two_pi = 6.28318530717958647692f;
   constexpr float amplitude = 0.10f;
+  constexpr uint8_t target_fill_percent = 70;
 
   uint8_t pcm[chunk_bytes];
   float phase = 0.0f;
   const float phase_step = two_pi * frequency / sample_rate;
 
-  // Fill about 100 ms before the A2DP callback is allowed to consume the buffer.
-  const int prefill_chunks = prefill_ms / chunk_ms;
-  for (int chunk = 0; chunk < prefill_chunks; chunk++) {
+  auto generate_chunk = [&]() {
     auto *out = reinterpret_cast<int16_t *>(pcm);
     constexpr size_t samples = chunk_bytes / 4U;
     for (size_t i = 0; i < samples; i++) {
@@ -73,6 +72,12 @@ void BtAudioBridge::engine_test_task_(void *arg) {
       phase += phase_step;
       if (phase >= two_pi) phase -= two_pi;
     }
+  };
+
+  // Fill the ring buffer before allowing the A2DP callback to consume it.
+  const int prefill_chunks = prefill_ms / chunk_ms;
+  for (int chunk = 0; chunk < prefill_chunks; chunk++) {
+    generate_chunk();
     self->audio_engine_.write(pcm, sizeof(pcm));
   }
 
@@ -82,17 +87,14 @@ void BtAudioBridge::engine_test_task_(void *arg) {
   const TickType_t start = xTaskGetTickCount();
   const TickType_t duration = pdMS_TO_TICKS(test_duration_ms);
   while (self->engine_test_active_ && (xTaskGetTickCount() - start) < duration) {
-    auto *out = reinterpret_cast<int16_t *>(pcm);
-    constexpr size_t samples = chunk_bytes / 4U;
-    for (size_t i = 0; i < samples; i++) {
-      const int16_t value = static_cast<int16_t>(std::sin(phase) * 32767.0f * amplitude);
-      out[i * 2U] = value;
-      out[i * 2U + 1U] = value;
-      phase += phase_step;
-      if (phase >= two_pi) phase -= two_pi;
+    // Do not rely on exact task timing. Keep a healthy amount of PCM queued,
+    // but leave headroom so the producer cannot overrun the ring buffer.
+    if (self->audio_engine_.fill_percent() < target_fill_percent) {
+      generate_chunk();
+      self->audio_engine_.write(pcm, sizeof(pcm));
+    } else {
+      vTaskDelay(pdMS_TO_TICKS(1));
     }
-    self->audio_engine_.write(pcm, sizeof(pcm));
-    vTaskDelay(pdMS_TO_TICKS(chunk_ms));
   }
 
   self->engine_test_active_ = false;
