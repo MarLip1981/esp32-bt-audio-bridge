@@ -62,6 +62,15 @@ bool skip_bytes(Stream &stream, uint32_t length) {
 
 }  // namespace
 
+void BtAudioBridge::set_audio_url(const char *url) {
+  if (url == nullptr) {
+    this->audio_url_[0] = '\0';
+    return;
+  }
+  std::strncpy(this->audio_url_, url, sizeof(this->audio_url_) - 1);
+  this->audio_url_[sizeof(this->audio_url_) - 1] = '\0';
+}
+
 void BtAudioBridge::play_http_wav() {
   if (this->engine_test_active_) {
     ESP_LOGW(HTTP_TAG, "HTTP WAV playback already active");
@@ -75,13 +84,13 @@ void BtAudioBridge::play_http_wav() {
     return;
   }
 
-  if (this->audio_url_text_ == nullptr || this->audio_url_text_->state.empty()) {
+  if (this->audio_url_[0] == '\0') {
     ESP_LOGW(HTTP_TAG, "HTTP WAV URL is empty");
     this->publish_event_("HTTP WAV: URL empty");
     return;
   }
 
-  if (this->audio_url_text_->state.rfind("http://", 0) != 0) {
+  if (std::strncmp(this->audio_url_, "http://", 7) != 0) {
     ESP_LOGW(HTTP_TAG, "Only plain HTTP WAV URLs are supported in this stage");
     this->publish_event_("HTTP WAV: only http:// is supported");
     return;
@@ -114,7 +123,7 @@ void BtAudioBridge::play_http_wav() {
 
 void BtAudioBridge::http_wav_task_(void *arg) {
   auto *self = static_cast<BtAudioBridge *>(arg);
-  std::string url = self->audio_url_text_ != nullptr ? self->audio_url_text_->state : std::string();
+  std::string url(self->audio_url_);
 
   WiFiClient client;
   HTTPClient http;
@@ -206,25 +215,21 @@ void BtAudioBridge::http_wav_task_(void *arg) {
       bits_per_sample = le16(fmt + 14);
       fmt_found = true;
 
-      if (chunk_size > 16 && !skip_bytes(*stream, chunk_size - 16)) {
+      if (chunk_size > 16 && !skip_bytes(stream, chunk_size - 16)) {
         self->publish_event_("HTTP WAV: bad fmt extension");
         http.end();
         self->engine_test_active_ = false;
         vTaskDelete(nullptr);
         return;
       }
-      if (chunk_size & 1U) {
-        // skip_bytes above handled padding only when it received the extension;
-        // for the exact 16-byte fmt chunk the RIFF padding still needs consuming.
-        if (chunk_size == 16) {
-          uint8_t padding = 0;
-          if (!read_exact(*stream, &padding, 1)) {
-            self->publish_event_("HTTP WAV: bad fmt padding");
-            http.end();
-            self->engine_test_active_ = false;
-            vTaskDelete(nullptr);
-            return;
-          }
+      if (chunk_size == 16 && (chunk_size & 1U)) {
+        uint8_t padding = 0;
+        if (!read_exact(*stream, &padding, 1)) {
+          self->publish_event_("HTTP WAV: bad fmt padding");
+          http.end();
+          self->engine_test_active_ = false;
+          vTaskDelete(nullptr);
+          return;
         }
       }
     } else if (is_fourcc(chunk_header, "data")) {
@@ -307,8 +312,6 @@ void BtAudioBridge::http_wav_task_(void *arg) {
     remaining -= static_cast<uint32_t>(wanted);
   }
 
-  // Let the A2DP callback drain the final PCM already buffered before
-  // releasing the engine callback back to the normal test-tone path.
   const TickType_t drain_start = xTaskGetTickCount();
   while (self->audio_engine_.available() > 0 &&
          (xTaskGetTickCount() - drain_start) < pdMS_TO_TICKS(1000) &&
