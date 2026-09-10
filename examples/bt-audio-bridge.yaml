@@ -20,6 +20,8 @@
 esphome:
   name: bt-audio-bridge
   friendly_name: BT audio bridge
+  libraries:
+    - HTTPClient
 
 esp32:
   variant: esp32
