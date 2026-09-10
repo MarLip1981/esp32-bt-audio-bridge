@@ -114,6 +114,10 @@ async def _new_text_sensor(config, key, setter, var):
 
 
 async def to_code(config):
+    # bt_http_wav.cpp includes Arduino's HTTPClient directly. Declare the
+    # library here so ESPHome adds its include path to this component.
+    cg.add_library("HTTPClient", None)
+
     include_builtin_idf_component("bt")
 
     add_idf_sdkconfig_option("CONFIG_BT_ENABLED", True)
