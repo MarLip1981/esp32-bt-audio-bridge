@@ -9,13 +9,12 @@
 # - testowe audio: OK
 # - diagnostyka Wi-Fi / RAM / CPU / Bluetooth: DODANA
 # - Audio Engine: stały callback A2DP + 24 KiB ring buffer PCM: OK
+# - HTTP WAV -> PCM 44.1 kHz / 16 bit / stereo -> Audio Engine: DODANE
 #
-# NASTĘPNY ETAP:
-# HTTP WAV -> parser WAV -> PCM 44.1 kHz / 16 bit / stereo
-# -> BtAudioEngine::write() -> stały callback A2DP -> głośnik
-#
-# MP3 / TTS NIE SĄ JESZCZE IMPLEMENTOWANE.
-# Nie zmieniamy przy tym działającego auto-reconnect ani callbacku A2DP.
+# OGRANICZENIE TEGO ETAPU:
+# - źródło musi być dostępne po zwykłym http://
+# - WAV musi być PCM 44.1 kHz / 16 bit / stereo
+# - MP3 / TTS NIE SĄ JESZCZE IMPLEMENTOWANE
 # ============================================================================
 
 esphome:
@@ -48,6 +47,18 @@ wifi:
     ssid: BT audio bridge
 
 captive_portal:
+
+text:
+  - platform: template
+    id: http_wav_url
+    name: "HTTP WAV URL"
+    mode: text
+    optimistic: true
+    max_length: 255
+    on_value:
+      then:
+        - lambda: |-
+            id(bt_audio_bridge_id).set_audio_url(x.c_str());
 
 bt_audio_bridge:
   id: bt_audio_bridge_id
@@ -227,3 +238,10 @@ button:
     on_press:
       - lambda: |-
           id(bt_audio_bridge_id).start_engine_test();
+
+  - platform: template
+    name: "Play HTTP WAV"
+    icon: "mdi:play-circle"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).play_http_wav();
