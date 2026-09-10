@@ -91,7 +91,7 @@ CONFIG_SCHEMA = cv.Schema({
     cv.Optional(CONF_EVENT): text_sensor.text_sensor_schema(),
     cv.Optional(CONF_RESET_REASON): text_sensor.text_sensor_schema(),
     cv.Optional(CONF_DEVICE): text_sensor.text_sensor_schema(),
-    cv.Optional(CONF_RSSI): sensor.sensor_schema(unit_of_measureMENT="dBm", accuracy_decimals=0),
+    cv.Optional(CONF_RSSI): sensor.sensor_schema(unit_of_measurement="dBm", accuracy_decimals=0),
     cv.Optional(CONF_BATTERY): text_sensor.text_sensor_schema(),
     cv.Optional(CONF_DEVICES, default=[]): cv.All(
         cv.ensure_list(DEVICE_SLOT_SCHEMA),
