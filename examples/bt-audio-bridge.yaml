@@ -8,7 +8,7 @@
 # - zapamiętanie + auto-reconnect + synchronizacja: OK
 # - testowe audio: OK
 # - diagnostyka Wi-Fi / RAM / CPU / Bluetooth: DODANA
-# - test Audio Engine PCM -> ring buffer -> A2DP: DODANY
+# - Audio Engine: test PCM przez ring buffer
 # ============================================================================
 
 esphome:
@@ -44,7 +44,6 @@ captive_portal:
 
 bt_audio_bridge:
   id: bt_audio_bridge_id
-
   status:
     name: "Bluetooth Status"
   event:
@@ -57,7 +56,6 @@ bt_audio_bridge:
     name: "Bluetooth RSSI"
   battery:
     name: "Bluetooth Battery Status"
-
   devices:
     - text_sensor:
         name: "Bluetooth Device 1"
@@ -75,7 +73,6 @@ bt_audio_bridge:
         name: "Bluetooth Device 7"
     - text_sensor:
         name: "Bluetooth Device 8"
-
   diagnostics:
     wifi_rssi:
       name: "WiFi RSSI"
@@ -211,15 +208,15 @@ button:
           id(bt_audio_bridge_id).start_test_tone();
 
   - platform: template
-    name: "Audio Engine Test"
-    icon: "mdi:waveform"
-    on_press:
-      - lambda: |-
-          id(bt_audio_bridge_id).start_engine_test();
-
-  - platform: template
     name: "Stop Test Audio"
     icon: "mdi:volume-off"
     on_press:
       - lambda: |-
           id(bt_audio_bridge_id).stop_test_tone();
+
+  - platform: template
+    name: "Audio Engine Test"
+    icon: "mdi:audio-video"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).start_engine_test();
