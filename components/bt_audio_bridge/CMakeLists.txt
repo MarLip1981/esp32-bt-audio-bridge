@@ -8,6 +8,7 @@ idf_component_register(
         "."
     REQUIRES
         bt
+        arduino-esp32
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
