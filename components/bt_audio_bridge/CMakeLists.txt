@@ -1,7 +1,7 @@
 idf_component_register(
     SRCS
         "bt_audio_bridge.cpp"
-        "bt_audio_bridge_test_audio.cpp"
+        "bt_audio_engine.cpp"
     INCLUDE_DIRS
         "."
     REQUIRES
