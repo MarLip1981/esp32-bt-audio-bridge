@@ -11,26 +11,16 @@
 namespace esphome {
 namespace bt_audio_bridge {
 
-int32_t BtAudioBridge::engine_audio_callback_(uint8_t *data, int32_t len) {
-  if (global_bt_audio_bridge == nullptr) {
-    std::memset(data, 0, static_cast<size_t>(len));
-    return len;
-  }
-  return static_cast<int32_t>(global_bt_audio_bridge->audio_engine_.read(data, static_cast<size_t>(len)));
-}
-
 void BtAudioBridge::start_engine_test() {
   if (!this->a2dp_started_ || !this->a2dp_source_.is_active()) {
     ESP_LOGW("bt_audio_bridge", "Audio engine test requested while Bluetooth speaker is not connected");
     this->publish_event_("ENGINE: speaker not connected");
     return;
   }
-
   if (this->engine_test_active_) {
     ESP_LOGW("bt_audio_bridge", "Audio engine test already running");
     return;
   }
-
   if (!this->audio_engine_.begin()) {
     ESP_LOGE("bt_audio_bridge", "Audio engine buffer allocation failed");
     this->publish_event_("ENGINE: buffer allocation FAILED");
@@ -38,9 +28,8 @@ void BtAudioBridge::start_engine_test() {
   }
 
   this->audio_engine_.clear();
-  this->engine_test_active_ = true;
-  this->a2dp_source_.set_data_callback(&BtAudioBridge::engine_audio_callback_);
-  this->publish_event_("ENGINE: PCM ring-buffer test started");
+  this->engine_test_active_ = false;
+  this->publish_event_("ENGINE: pre-filling PCM ring buffer");
 
   BaseType_t result = xTaskCreate(
       &BtAudioBridge::engine_test_task_,
@@ -51,8 +40,6 @@ void BtAudioBridge::start_engine_test() {
       nullptr);
 
   if (result != pdPASS) {
-    this->engine_test_active_ = false;
-    this->a2dp_source_.set_data_callback(&BtAudioBridge::test_tone_callback_);
     ESP_LOGE("bt_audio_bridge", "Audio engine test task creation failed");
     this->publish_event_("ENGINE: test task FAILED");
   }
@@ -62,46 +49,76 @@ void BtAudioBridge::engine_test_task_(void *arg) {
   auto *self = static_cast<BtAudioBridge *>(arg);
   constexpr uint32_t test_duration_ms = 5000;
   constexpr uint32_t chunk_ms = 10;
+  constexpr uint32_t prefill_ms = 100;
   constexpr size_t bytes_per_second = 44100U * 2U * 2U;
   constexpr size_t chunk_bytes = bytes_per_second * chunk_ms / 1000U;
-  constexpr double sample_rate = 44100.0;
-  constexpr double frequency = 440.0;
-  constexpr double two_pi = 6.28318530717958647692;
+  constexpr float sample_rate = 44100.0f;
+  constexpr float frequency = 440.0f;
+  constexpr float two_pi = 6.28318530717958647692f;
+  constexpr float amplitude = 0.10f;
 
   uint8_t pcm[chunk_bytes];
-  uint32_t phase = 0;
+  float phase = 0.0f;
+  const float phase_step = two_pi * frequency / sample_rate;
+
+  // Fill about 100 ms before the A2DP callback is allowed to consume the buffer.
+  const int prefill_chunks = prefill_ms / chunk_ms;
+  for (int chunk = 0; chunk < prefill_chunks; chunk++) {
+    auto *out = reinterpret_cast<int16_t *>(pcm);
+    constexpr size_t samples = chunk_bytes / 4U;
+    for (size_t i = 0; i < samples; i++) {
+      const int16_t value = static_cast<int16_t>(std::sinf(phase) * 32767.0f * amplitude);
+      out[i * 2U] = value;
+      out[i * 2U + 1U] = value;
+      phase += phase_step;
+      if (phase >= two_pi) phase -= two_pi;
+    }
+    self->audio_engine_.write(pcm, sizeof(pcm));
+  }
+
+  self->engine_test_active_ = true;
+  self->publish_event_("ENGINE: PCM ring-buffer playback started");
+
   const TickType_t start = xTaskGetTickCount();
   const TickType_t duration = pdMS_TO_TICKS(test_duration_ms);
-
   while (self->engine_test_active_ && (xTaskGetTickCount() - start) < duration) {
     auto *out = reinterpret_cast<int16_t *>(pcm);
     constexpr size_t samples = chunk_bytes / 4U;
-
     for (size_t i = 0; i < samples; i++) {
-      const double sample = std::sin(two_pi * frequency * static_cast<double>(phase) / sample_rate) * 0.18;
-      const int16_t value = static_cast<int16_t>(sample * 32767.0);
+      const int16_t value = static_cast<int16_t>(std::sinf(phase) * 32767.0f * amplitude);
       out[i * 2U] = value;
       out[i * 2U + 1U] = value;
-      phase++;
+      phase += phase_step;
+      if (phase >= two_pi) phase -= two_pi;
     }
-
     self->audio_engine_.write(pcm, sizeof(pcm));
     vTaskDelay(pdMS_TO_TICKS(chunk_ms));
   }
 
   self->engine_test_active_ = false;
-  self->a2dp_source_.set_data_callback(&BtAudioBridge::test_tone_callback_);
+  const unsigned buffer = static_cast<unsigned>(self->audio_engine_.fill_percent());
+  const unsigned underruns = static_cast<unsigned>(self->audio_engine_.underruns());
+  const unsigned overruns = static_cast<unsigned>(self->audio_engine_.overruns());
+  const unsigned written = static_cast<unsigned>(self->audio_engine_.bytes_written());
+  const unsigned read = static_cast<unsigned>(self->audio_engine_.bytes_read());
+  self->audio_engine_.clear();
 
   ESP_LOGI("bt_audio_bridge",
            "Audio engine test finished: buffer=%u%% underruns=%u overruns=%u written=%u read=%u",
-           static_cast<unsigned>(self->audio_engine_.fill_percent()),
-           static_cast<unsigned>(self->audio_engine_.underruns()),
-           static_cast<unsigned>(self->audio_engine_.overruns()),
-           static_cast<unsigned>(self->audio_engine_.bytes_written()),
-           static_cast<unsigned>(self->audio_engine_.bytes_read()));
-  self->publish_event_("ENGINE: PCM ring-buffer test finished");
-
+           buffer, underruns, overruns, written, read);
+  self->publish_event_(underruns == 0 && overruns == 0 ? "ENGINE: test OK - no underrun/overrun" : "ENGINE: test finished - check counters");
   vTaskDelete(nullptr);
+}
+
+int32_t BtAudioBridge::engine_audio_callback_(uint8_t *data, int32_t len) {
+  if (global_bt_audio_bridge == nullptr) {
+    std::memset(data, 0, static_cast<size_t>(len));
+    return len;
+  }
+  if (global_bt_audio_bridge->engine_test_active_) {
+    return static_cast<int32_t>(global_bt_audio_bridge->audio_engine_.read(data, static_cast<size_t>(len)));
+  }
+  return global_bt_audio_bridge->generate_test_tone_(data, len);
 }
 
 }  // namespace bt_audio_bridge
