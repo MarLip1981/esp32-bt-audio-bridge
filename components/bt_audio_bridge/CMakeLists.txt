@@ -9,6 +9,7 @@ idf_component_register(
     REQUIRES
         bt
         arduino-esp32
+        esp_http_client
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
