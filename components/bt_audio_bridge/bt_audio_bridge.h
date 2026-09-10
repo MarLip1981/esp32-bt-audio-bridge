@@ -1,6 +1,7 @@
 #pragma once
 
 #include "esphome/components/sensor/sensor.h"
+#include "esphome/components/text/text.h"
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
@@ -46,6 +47,7 @@ class BtAudioBridge : public Component {
   void set_device_sensor(text_sensor::TextSensor *sensor) { this->device_sensor_ = sensor; }
   void set_rssi_sensor(sensor::Sensor *sensor) { this->rssi_sensor_ = sensor; }
   void set_battery_sensor(text_sensor::TextSensor *sensor) { this->battery_sensor_ = sensor; }
+  void set_audio_url_text(text::Text *text) { this->audio_url_text_ = text; }
   void add_device_slot(text_sensor::TextSensor *sensor) {
     if (this->device_slot_count_ >= MAX_DEVICES) return;
     this->device_sensors_[this->device_slot_count_] = sensor;
@@ -61,6 +63,7 @@ class BtAudioBridge : public Component {
   void start_test_tone();
   void stop_test_tone();
   void start_engine_test();
+  void play_http_wav();
   void on_discovery_stopped();
   void on_device_found(const char *name, const char *mac, int rssi);
   void on_real_rssi(int rssi);
@@ -80,6 +83,7 @@ class BtAudioBridge : public Component {
   static int32_t test_tone_callback_(uint8_t *data, int32_t len);
   static int32_t engine_audio_callback_(uint8_t *data, int32_t len);
   static void engine_test_task_(void *arg);
+  static void http_wav_task_(void *arg);
   int32_t generate_test_tone_(uint8_t *data, int32_t len);
   void publish_status_();
   void publish_event_(const char *event);
@@ -99,6 +103,7 @@ class BtAudioBridge : public Component {
   text_sensor::TextSensor *device_sensor_{nullptr};
   sensor::Sensor *rssi_sensor_{nullptr};
   text_sensor::TextSensor *battery_sensor_{nullptr};
+  text::Text *audio_url_text_{nullptr};
   text_sensor::TextSensor *device_sensors_[MAX_DEVICES]{};
   DeviceInfo devices_[MAX_DEVICES]{};
   size_t device_slot_count_{0};
