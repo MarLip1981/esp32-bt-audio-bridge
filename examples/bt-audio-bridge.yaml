@@ -3,12 +3,19 @@
 # ============================================================================
 # ESP32 DevKit V1 / ESP32-WROOM-32 - Bluetooth Classic A2DP Source
 #
-# Stan:
+# AKTUALNY STAN:
 # - Bluetooth / A2DP, skanowanie, wybór i połączenie: OK
-# - zapamiętanie + auto-reconnect + synchronizacja: OK
+# - zapamiętanie + auto-reconnect + synchronizacja aktualnego peer'a: OK
 # - testowe audio: OK
 # - diagnostyka Wi-Fi / RAM / CPU / Bluetooth: DODANA
-# - Audio Engine: test PCM przez ring buffer
+# - Audio Engine: stały callback A2DP + 24 KiB ring buffer PCM: OK
+#
+# NASTĘPNY ETAP:
+# HTTP WAV -> parser WAV -> PCM 44.1 kHz / 16 bit / stereo
+# -> BtAudioEngine::write() -> stały callback A2DP -> głośnik
+#
+# MP3 / TTS NIE SĄ JESZCZE IMPLEMENTOWANE.
+# Nie zmieniamy przy tym działającego auto-reconnect ani callbacku A2DP.
 # ============================================================================
 
 esphome:
