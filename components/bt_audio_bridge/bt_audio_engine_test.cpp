@@ -1,9 +1,10 @@
 #include "bt_audio_bridge.h"
+#include "bt_audio_pcm_source.h"
 
 #include "esphome/core/log.h"
 
-#include <cmath>
-#include <cstring>
+#include <cstddef>
+#include <cstdint>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -50,35 +51,23 @@ void BtAudioBridge::engine_test_task_(void *arg) {
   constexpr uint32_t test_duration_ms = 5000;
   constexpr uint32_t chunk_ms = 10;
   constexpr uint32_t prefill_ms = 150;
-  constexpr size_t bytes_per_second = 44100U * 2U * 2U;
+  constexpr size_t bytes_per_second = BtAudioPcmSource::SAMPLE_RATE * BtAudioPcmSource::BYTES_PER_FRAME;
   constexpr size_t chunk_bytes = bytes_per_second * chunk_ms / 1000U;
-  constexpr float sample_rate = 44100.0f;
-  constexpr float frequency = 440.0f;
-  constexpr float two_pi = 6.28318530717958647692f;
-  constexpr float amplitude = 0.10f;
   constexpr uint8_t target_fill_percent = 70;
 
   uint8_t pcm[chunk_bytes];
-  float phase = 0.0f;
-  const float phase_step = two_pi * frequency / sample_rate;
+  BtAudioPcmSource source;
+  source.reset(440.0f, 0.10f);
 
   auto generate_chunk = [&]() {
-    auto *out = reinterpret_cast<int16_t *>(pcm);
-    constexpr size_t samples = chunk_bytes / 4U;
-    for (size_t i = 0; i < samples; i++) {
-      const int16_t value = static_cast<int16_t>(std::sin(phase) * 32767.0f * amplitude);
-      out[i * 2U] = value;
-      out[i * 2U + 1U] = value;
-      phase += phase_step;
-      if (phase >= two_pi) phase -= two_pi;
-    }
+    return source.generate(pcm, sizeof(pcm));
   };
 
   // Fill the ring buffer before allowing the A2DP callback to consume it.
   const int prefill_chunks = prefill_ms / chunk_ms;
   for (int chunk = 0; chunk < prefill_chunks; chunk++) {
-    generate_chunk();
-    self->audio_engine_.write(pcm, sizeof(pcm));
+    const size_t generated = generate_chunk();
+    self->audio_engine_.write(pcm, generated);
   }
 
   self->engine_test_active_ = true;
@@ -87,11 +76,12 @@ void BtAudioBridge::engine_test_task_(void *arg) {
   const TickType_t start = xTaskGetTickCount();
   const TickType_t duration = pdMS_TO_TICKS(test_duration_ms);
   while (self->engine_test_active_ && (xTaskGetTickCount() - start) < duration) {
-    // Do not rely on exact task timing. Keep a healthy amount of PCM queued,
-    // but leave headroom so the producer cannot overrun the ring buffer.
+    // Keep a healthy amount of PCM queued without trying to pace the producer
+    // to wall-clock time. The same producer interface will later be fed by
+    // network/decoder sources instead of this synthetic source.
     if (self->audio_engine_.fill_percent() < target_fill_percent) {
-      generate_chunk();
-      self->audio_engine_.write(pcm, sizeof(pcm));
+      const size_t generated = generate_chunk();
+      self->audio_engine_.write(pcm, generated);
     } else {
       vTaskDelay(pdMS_TO_TICKS(1));
     }
