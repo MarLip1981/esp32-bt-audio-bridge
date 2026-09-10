@@ -67,7 +67,7 @@ void BtAudioBridge::engine_test_task_(void *arg) {
     auto *out = reinterpret_cast<int16_t *>(pcm);
     constexpr size_t samples = chunk_bytes / 4U;
     for (size_t i = 0; i < samples; i++) {
-      const int16_t value = static_cast<int16_t>(std::sinf(phase) * 32767.0f * amplitude);
+      const int16_t value = static_cast<int16_t>(std::sin(phase) * 32767.0f * amplitude);
       out[i * 2U] = value;
       out[i * 2U + 1U] = value;
       phase += phase_step;
@@ -85,7 +85,7 @@ void BtAudioBridge::engine_test_task_(void *arg) {
     auto *out = reinterpret_cast<int16_t *>(pcm);
     constexpr size_t samples = chunk_bytes / 4U;
     for (size_t i = 0; i < samples; i++) {
-      const int16_t value = static_cast<int16_t>(std::sinf(phase) * 32767.0f * amplitude);
+      const int16_t value = static_cast<int16_t>(std::sin(phase) * 32767.0f * amplitude);
       out[i * 2U] = value;
       out[i * 2U + 1U] = value;
       phase += phase_step;
@@ -108,17 +108,6 @@ void BtAudioBridge::engine_test_task_(void *arg) {
            buffer, underruns, overruns, written, read);
   self->publish_event_(underruns == 0 && overruns == 0 ? "ENGINE: test OK - no underrun/overrun" : "ENGINE: test finished - check counters");
   vTaskDelete(nullptr);
-}
-
-int32_t BtAudioBridge::engine_audio_callback_(uint8_t *data, int32_t len) {
-  if (global_bt_audio_bridge == nullptr) {
-    std::memset(data, 0, static_cast<size_t>(len));
-    return len;
-  }
-  if (global_bt_audio_bridge->engine_test_active_) {
-    return static_cast<int32_t>(global_bt_audio_bridge->audio_engine_.read(data, static_cast<size_t>(len)));
-  }
-  return global_bt_audio_bridge->generate_test_tone_(data, len);
 }
 
 }  // namespace bt_audio_bridge
