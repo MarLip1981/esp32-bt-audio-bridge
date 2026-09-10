@@ -1,7 +1,6 @@
 #pragma once
 
 #include "esphome/components/sensor/sensor.h"
-#include "esphome/components/text/text.h"
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
@@ -47,7 +46,7 @@ class BtAudioBridge : public Component {
   void set_device_sensor(text_sensor::TextSensor *sensor) { this->device_sensor_ = sensor; }
   void set_rssi_sensor(sensor::Sensor *sensor) { this->rssi_sensor_ = sensor; }
   void set_battery_sensor(text_sensor::TextSensor *sensor) { this->battery_sensor_ = sensor; }
-  void set_audio_url_text(text::Text *text) { this->audio_url_text_ = text; }
+  void set_audio_url(const char *url);
   void add_device_slot(text_sensor::TextSensor *sensor) {
     if (this->device_slot_count_ >= MAX_DEVICES) return;
     this->device_sensors_[this->device_slot_count_] = sensor;
@@ -103,7 +102,6 @@ class BtAudioBridge : public Component {
   text_sensor::TextSensor *device_sensor_{nullptr};
   sensor::Sensor *rssi_sensor_{nullptr};
   text_sensor::TextSensor *battery_sensor_{nullptr};
-  text::Text *audio_url_text_{nullptr};
   text_sensor::TextSensor *device_sensors_[MAX_DEVICES]{};
   DeviceInfo devices_[MAX_DEVICES]{};
   size_t device_slot_count_{0};
@@ -125,6 +123,7 @@ class BtAudioBridge : public Component {
   char selected_name_[64]{};
   char status_[32]{"STARTING"};
   char battery_status_[24]{"UNKNOWN"};
+  char audio_url_[256]{};
 
   int scan_cycles_{0};
   unsigned long last_status_check_{0};
