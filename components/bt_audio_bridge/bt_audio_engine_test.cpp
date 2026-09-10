@@ -1,5 +1,7 @@
 #include "bt_audio_bridge.h"
 
+#include "esphome/core/log.h"
+
 #include <cmath>
 #include <cstring>
 
