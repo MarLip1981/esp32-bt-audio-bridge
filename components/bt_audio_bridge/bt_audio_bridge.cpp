@@ -27,6 +27,22 @@ extern "C" bool __wrap_btStartMode(bt_mode mode) {
     default: esp_mode = ESP_BT_MODE_CLASSIC_BT; break;
   }
   if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_ENABLED) return true;
+
+  // A2DP uses Classic Bluetooth only. Arduino's normal btStartMode()
+  // releases the unused BLE memory before initializing Classic BT. This
+  // wrapper must do the same because it replaces btStartMode(). Without it,
+  // the Classic BT stack starts with significantly less contiguous heap and
+  // can fail later inside the BT media/L2CAP stack.
+  if (esp_mode == ESP_BT_MODE_CLASSIC_BT) {
+    if (!btMemReleased(BT_MODE_BLE)) {
+      if (!btMemRelease(BT_MODE_BLE)) {
+        ESP_LOGE("bt_audio_bridge", "BLE memory release failed");
+        return false;
+      }
+      ESP_LOGI("bt_audio_bridge", "Released unused BLE memory for Classic BT");
+    }
+  }
+
   esp_bt_controller_config_t cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
   cfg.mode = esp_mode;
   if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE) {
