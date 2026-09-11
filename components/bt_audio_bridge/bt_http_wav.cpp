@@ -5,6 +5,8 @@
 #include <esp_http_client.h>
 #include <esp_err.h>
 #include <esp_crt_bundle.h>
+#include <esp_heap_caps.h>
+#include <esp_system.h>
 
 #include <cstring>
 #include <string>
@@ -15,6 +17,12 @@ namespace bt_audio_bridge {
 static const char *const HTTP_TAG = "bt_http_wav";
 
 namespace {
+
+void log_heap(const char *stage) {
+  ESP_LOGI(HTTP_TAG, "Heap %s: free=%u largest=%u", stage,
+           static_cast<unsigned>(esp_get_free_heap_size()),
+           static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)));
+}
 
 bool read_exact(esp_http_client_handle_t client, uint8_t *buffer, size_t length) {
   size_t received = 0;
@@ -106,6 +114,7 @@ void BtAudioBridge::play_http_wav() {
     return;
   }
 
+  log_heap("before audio engine");
   if (!this->audio_engine_.begin()) {
     ESP_LOGE(HTTP_TAG, "Audio engine buffer allocation failed");
     this->publish_event_("HTTP WAV: audio buffer FAILED");
@@ -113,6 +122,7 @@ void BtAudioBridge::play_http_wav() {
   }
 
   this->audio_engine_.clear();
+  log_heap("after audio engine");
 
   BaseType_t result = xTaskCreate(
       &BtAudioBridge::http_wav_task_,
@@ -134,33 +144,42 @@ void BtAudioBridge::play_http_wav() {
 void BtAudioBridge::http_wav_task_(void *arg) {
   auto *self = static_cast<BtAudioBridge *>(arg);
   std::string url(self->audio_url_);
+  const bool https_url = std::strncmp(url.c_str(), "https://", 8) == 0;
+
+  log_heap("before HTTP init");
 
   esp_http_client_config_t config{};
   config.url = url.c_str();
   config.timeout_ms = 5000;
-  config.buffer_size = 4096;
-  config.buffer_size_tx = 1024;
-  config.crt_bundle_attach = esp_crt_bundle_attach;
+  config.buffer_size = 2048;
+  config.buffer_size_tx = 512;
+  config.crt_bundle_attach = https_url ? esp_crt_bundle_attach : nullptr;
 
   esp_http_client_handle_t client = esp_http_client_init(&config);
   if (client == nullptr) {
     ESP_LOGE(HTTP_TAG, "HTTP client init failed");
     self->publish_event_("HTTP WAV: HTTP init FAILED");
     self->engine_test_active_ = false;
+    self->audio_engine_.clear();
+    log_heap("after HTTP init FAILED");
     vTaskDelete(nullptr);
     return;
   }
 
+  log_heap("after HTTP init");
   esp_err_t err = esp_http_client_open(client, 0);
   if (err != ESP_OK) {
     ESP_LOGE(HTTP_TAG, "HTTP open failed: %s", esp_err_to_name(err));
     self->publish_event_("HTTP WAV: HTTP open FAILED");
     esp_http_client_cleanup(client);
     self->engine_test_active_ = false;
+    self->audio_engine_.clear();
+    log_heap("after HTTP open FAILED");
     vTaskDelete(nullptr);
     return;
   }
 
+  log_heap("after HTTP open");
   const int64_t content_length = esp_http_client_fetch_headers(client);
   const int http_code = esp_http_client_get_status_code(client);
   if (http_code != 200) {
@@ -169,6 +188,7 @@ void BtAudioBridge::http_wav_task_(void *arg) {
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
     self->engine_test_active_ = false;
+    self->audio_engine_.clear();
     vTaskDelete(nullptr);
     return;
   }
@@ -179,6 +199,7 @@ void BtAudioBridge::http_wav_task_(void *arg) {
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
     self->engine_test_active_ = false;
+    self->audio_engine_.clear();
     vTaskDelete(nullptr);
     return;
   }
@@ -194,6 +215,7 @@ void BtAudioBridge::http_wav_task_(void *arg) {
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
     self->engine_test_active_ = false;
+    self->audio_engine_.clear();
     vTaskDelete(nullptr);
     return;
   }
@@ -214,6 +236,7 @@ void BtAudioBridge::http_wav_task_(void *arg) {
       esp_http_client_close(client);
       esp_http_client_cleanup(client);
       self->engine_test_active_ = false;
+      self->audio_engine_.clear();
       vTaskDelete(nullptr);
       return;
     }
@@ -227,6 +250,7 @@ void BtAudioBridge::http_wav_task_(void *arg) {
         esp_http_client_close(client);
         esp_http_client_cleanup(client);
         self->engine_test_active_ = false;
+        self->audio_engine_.clear();
         vTaskDelete(nullptr);
         return;
       }
@@ -237,6 +261,7 @@ void BtAudioBridge::http_wav_task_(void *arg) {
         esp_http_client_close(client);
         esp_http_client_cleanup(client);
         self->engine_test_active_ = false;
+        self->audio_engine_.clear();
         vTaskDelete(nullptr);
         return;
       }
@@ -252,6 +277,7 @@ void BtAudioBridge::http_wav_task_(void *arg) {
         esp_http_client_close(client);
         esp_http_client_cleanup(client);
         self->engine_test_active_ = false;
+        self->audio_engine_.clear();
         vTaskDelete(nullptr);
         return;
       }
@@ -265,6 +291,7 @@ void BtAudioBridge::http_wav_task_(void *arg) {
         esp_http_client_close(client);
         esp_http_client_cleanup(client);
         self->engine_test_active_ = false;
+        self->audio_engine_.clear();
         vTaskDelete(nullptr);
         return;
       }
@@ -279,6 +306,7 @@ void BtAudioBridge::http_wav_task_(void *arg) {
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
     self->engine_test_active_ = false;
+    self->audio_engine_.clear();
     vTaskDelete(nullptr);
     return;
   }
