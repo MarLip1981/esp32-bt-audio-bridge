@@ -4,6 +4,7 @@
 
 #include <esp_http_client.h>
 #include <esp_err.h>
+#include <esp_crt_bundle.h>
 
 #include <cstring>
 #include <string>
@@ -97,9 +98,11 @@ void BtAudioBridge::play_http_wav() {
     return;
   }
 
-  if (std::strncmp(this->audio_url_, "http://", 7) != 0) {
-    ESP_LOGW(HTTP_TAG, "Only plain HTTP WAV URLs are supported in this stage");
-    this->publish_event_("HTTP WAV: only http:// is supported");
+  const bool http_url = std::strncmp(this->audio_url_, "http://", 7) == 0;
+  const bool https_url = std::strncmp(this->audio_url_, "https://", 8) == 0;
+  if (!http_url && !https_url) {
+    ESP_LOGW(HTTP_TAG, "Only http:// and https:// WAV URLs are supported");
+    this->publish_event_("HTTP WAV: URL must use http:// or https://");
     return;
   }
 
@@ -137,6 +140,7 @@ void BtAudioBridge::http_wav_task_(void *arg) {
   config.timeout_ms = 5000;
   config.buffer_size = 4096;
   config.buffer_size_tx = 1024;
+  config.crt_bundle_attach = esp_crt_bundle_attach;
 
   esp_http_client_handle_t client = esp_http_client_init(&config);
   if (client == nullptr) {
