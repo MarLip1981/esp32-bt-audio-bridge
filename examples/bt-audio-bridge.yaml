@@ -9,10 +9,10 @@
 # - testowe audio: OK
 # - diagnostyka Wi-Fi / RAM / CPU / Bluetooth: DODANA
 # - Audio Engine: stały callback A2DP + 24 KiB ring buffer PCM: OK
-# - HTTP WAV -> PCM 44.1 kHz / 16 bit / stereo -> Audio Engine: DODANE
+# - HTTP/HTTPS WAV -> PCM 44.1 kHz / 16 bit / stereo -> Audio Engine: DODANE
+# - certyfikat HTTPS: ESP-IDF mbedTLS certificate bundle
 #
 # OGRANICZENIE TEGO ETAPU:
-# - źródło musi być dostępne po zwykłym http://
 # - WAV musi być PCM 44.1 kHz / 16 bit / stereo
 # - MP3 / TTS NIE SĄ JESZCZE IMPLEMENTOWANE
 # ============================================================================
@@ -20,8 +20,6 @@
 esphome:
   name: bt-audio-bridge
   friendly_name: BT audio bridge
-  libraries:
-    - HTTPClient
 
 esp32:
   variant: esp32
