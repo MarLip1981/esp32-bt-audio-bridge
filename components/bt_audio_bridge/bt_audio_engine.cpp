@@ -8,7 +8,8 @@ namespace bt_audio_bridge {
 bool BtAudioEngine::begin() {
   if (this->buffer_ != nullptr) return true;
 
-  this->buffer_ = xStreamBufferCreate(BUFFER_SIZE, TRIGGER_LEVEL);
+  this->buffer_ = xStreamBufferCreateStatic(BUFFER_SIZE, TRIGGER_LEVEL,
+                                             this->storage_, &this->static_buffer_);
   if (this->buffer_ == nullptr) return false;
 
   this->underruns_ = 0;
@@ -19,10 +20,9 @@ bool BtAudioEngine::begin() {
 }
 
 void BtAudioEngine::end() {
-  if (this->buffer_ != nullptr) {
-    vStreamBufferDelete(this->buffer_);
-    this->buffer_ = nullptr;
-  }
+  // Static FreeRTOS objects must not be deleted with vStreamBufferDelete().
+  // Keep the statically allocated object alive for the lifetime of the bridge.
+  this->buffer_ = nullptr;
 }
 
 void BtAudioEngine::clear() {
