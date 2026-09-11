@@ -31,7 +31,7 @@ esp32:
     type: arduino
 
 external_components:
-  - source: github://MarLip1981/esp32-bt-audio-bridge
+  - source: github://MarLip1981/esp32-bt-audio-bridge@safe-prefill-test
     components: [bt_audio_bridge]
     refresh: 1s
 
