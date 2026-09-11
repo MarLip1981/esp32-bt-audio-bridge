@@ -19,6 +19,11 @@
 esphome:
   name: bt-audio-bridge
   friendly_name: BT audio bridge
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          id(bt_audio_bridge_id).set_audio_url(id(http_wav_url).state.c_str());
 
 esp32:
   variant: esp32
