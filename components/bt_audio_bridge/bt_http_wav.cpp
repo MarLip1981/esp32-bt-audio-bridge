@@ -95,19 +95,16 @@ void BtAudioBridge::play_http_wav() {
     this->publish_event_("HTTP WAV: already playing");
     return;
   }
-
   if (!this->a2dp_started_ || !this->a2dp_source_.is_active()) {
     ESP_LOGW(HTTP_TAG, "HTTP WAV requested while Bluetooth speaker is not connected");
     this->publish_event_("HTTP WAV: speaker not connected");
     return;
   }
-
   if (this->audio_url_[0] == '\0') {
     ESP_LOGW(HTTP_TAG, "HTTP WAV URL is empty");
     this->publish_event_("HTTP WAV: URL empty");
     return;
   }
-
   const bool http_url = std::strncmp(this->audio_url_, "http://", 7) == 0;
   const bool https_url = std::strncmp(this->audio_url_, "https://", 8) == 0;
   if (!http_url && !https_url) {
@@ -115,23 +112,13 @@ void BtAudioBridge::play_http_wav() {
     this->publish_event_("HTTP WAV: URL must use http:// or https://");
     return;
   }
-
   log_heap("before HTTP task");
-
-  BaseType_t result = xTaskCreate(
-      &BtAudioBridge::http_wav_task_,
-      "bt_http_wav",
-      3072,
-      this,
-      2,
-      nullptr);
-
+  BaseType_t result = xTaskCreate(&BtAudioBridge::http_wav_task_, "bt_http_wav", 3072, this, 2, nullptr);
   if (result != pdPASS) {
     ESP_LOGE(HTTP_TAG, "HTTP WAV task creation failed");
     this->publish_event_("HTTP WAV: task FAILED");
     return;
   }
-
   this->publish_event_("HTTP WAV: download started");
 }
 
@@ -139,18 +126,15 @@ void BtAudioBridge::http_wav_task_(void *arg) {
   auto *self = static_cast<BtAudioBridge *>(arg);
   std::string url(self->audio_url_);
   const bool https_url = std::strncmp(url.c_str(), "https://", 8) == 0;
-
   ESP_LOGI(HTTP_TAG, "HTTP task started: stack free words=%u URL=%s",
            static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)), url.c_str());
   log_heap("before HTTP init");
-
   esp_http_client_config_t config{};
   config.url = url.c_str();
   config.timeout_ms = 5000;
   config.buffer_size = 2048;
   config.buffer_size_tx = 512;
   config.crt_bundle_attach = https_url ? esp_crt_bundle_attach : nullptr;
-
   esp_http_client_handle_t client = esp_http_client_init(&config);
   if (client == nullptr) {
     ESP_LOGE(HTTP_TAG, "HTTP client init failed");
@@ -160,7 +144,6 @@ void BtAudioBridge::http_wav_task_(void *arg) {
     vTaskDelete(nullptr);
     return;
   }
-
   log_heap("after HTTP init");
   esp_err_t err = esp_http_client_open(client, 0);
   if (err != ESP_OK) {
@@ -172,7 +155,6 @@ void BtAudioBridge::http_wav_task_(void *arg) {
     vTaskDelete(nullptr);
     return;
   }
-
   log_heap("after HTTP open");
   const int64_t content_length = esp_http_client_fetch_headers(client);
   const int http_code = esp_http_client_get_status_code(client);
@@ -185,7 +167,6 @@ void BtAudioBridge::http_wav_task_(void *arg) {
     vTaskDelete(nullptr);
     return;
   }
-
   if (content_length < 0) {
     ESP_LOGE(HTTP_TAG, "HTTP response headers failed: %lld", static_cast<long long>(content_length));
     self->publish_event_("HTTP WAV: HTTP headers FAILED");
@@ -195,11 +176,9 @@ void BtAudioBridge::http_wav_task_(void *arg) {
     vTaskDelete(nullptr);
     return;
   }
-
   ESP_LOGI(HTTP_TAG, "HTTP connected, content-length=%lld, chunked=%s",
            static_cast<long long>(content_length),
            esp_http_client_is_chunked_response(client) ? "yes" : "no");
-
   if (!self->audio_engine_.begin()) {
     ESP_LOGE(HTTP_TAG, "Audio engine buffer allocation failed after HTTP connect");
     self->publish_event_("HTTP WAV: audio buffer FAILED");
@@ -212,7 +191,6 @@ void BtAudioBridge::http_wav_task_(void *arg) {
   }
   self->audio_engine_.clear();
   log_heap("after audio buffer allocation");
-
   uint8_t header[12];
   if (!read_exact(client, header, sizeof(header)) || !is_fourcc(header, "RIFF") || !is_fourcc(header + 8, "WAVE")) {
     ESP_LOGE(HTTP_TAG, "Invalid RIFF/WAVE header");
@@ -224,7 +202,6 @@ void BtAudioBridge::http_wav_task_(void *arg) {
     vTaskDelete(nullptr);
     return;
   }
-
   bool fmt_found = false;
   bool data_found = false;
   uint16_t audio_format = 0;
@@ -232,7 +209,6 @@ void BtAudioBridge::http_wav_task_(void *arg) {
   uint32_t sample_rate = 0;
   uint16_t bits_per_sample = 0;
   uint32_t data_size = 0;
-
   while (!data_found) {
     uint8_t chunk_header[8];
     if (!read_exact(client, chunk_header, sizeof(chunk_header))) {
@@ -245,9 +221,7 @@ void BtAudioBridge::http_wav_task_(void *arg) {
       vTaskDelete(nullptr);
       return;
     }
-
     const uint32_t chunk_size = le32(chunk_header + 4);
-
     if (is_fourcc(chunk_header, "fmt ")) {
       if (chunk_size < 16) {
         ESP_LOGE(HTTP_TAG, "Invalid fmt chunk size=%u", static_cast<unsigned>(chunk_size));
@@ -259,7 +233,6 @@ void BtAudioBridge::http_wav_task_(void *arg) {
         vTaskDelete(nullptr);
         return;
       }
-
       uint8_t fmt[16];
       if (!read_exact(client, fmt, sizeof(fmt))) {
         self->publish_event_("HTTP WAV: truncated fmt chunk");
@@ -270,13 +243,11 @@ void BtAudioBridge::http_wav_task_(void *arg) {
         vTaskDelete(nullptr);
         return;
       }
-
       audio_format = le16(fmt + 0);
       channels = le16(fmt + 2);
       sample_rate = le32(fmt + 4);
       bits_per_sample = le16(fmt + 14);
       fmt_found = true;
-
       if (chunk_size > 16 && !skip_bytes(client, chunk_size - 16)) {
         self->publish_event_("HTTP WAV: bad fmt extension");
         esp_http_client_close(client);
@@ -302,7 +273,6 @@ void BtAudioBridge::http_wav_task_(void *arg) {
       }
     }
   }
-
   if (!fmt_found || audio_format != 1 || channels != 2 || sample_rate != 44100 || bits_per_sample != 16) {
     ESP_LOGE(HTTP_TAG, "Unsupported WAV: format=%u channels=%u rate=%u bits=%u",
              static_cast<unsigned>(audio_format), static_cast<unsigned>(channels),
@@ -315,14 +285,11 @@ void BtAudioBridge::http_wav_task_(void *arg) {
     vTaskDelete(nullptr);
     return;
   }
-
   ESP_LOGI(HTTP_TAG, "WAV accepted: PCM 44.1 kHz / 16 bit / stereo, data=%u bytes", static_cast<unsigned>(data_size));
   self->publish_event_("HTTP WAV: WAV accepted, pre-filling PCM");
-
   uint8_t pcm[1024];
   uint32_t remaining = data_size;
-  constexpr uint8_t PREFILL_PERCENT = 60;
-
+  constexpr uint8_t PREFILL_PERCENT = 70;
   while (remaining > 0 && self->audio_engine_.fill_percent() < PREFILL_PERCENT) {
     const size_t wanted = remaining > sizeof(pcm) ? sizeof(pcm) : remaining;
     if (!read_exact(client, pcm, wanted)) {
@@ -335,7 +302,6 @@ void BtAudioBridge::http_wav_task_(void *arg) {
       vTaskDelete(nullptr);
       return;
     }
-
     size_t offset = 0;
     while (offset < wanted) {
       const size_t written = self->audio_engine_.write(pcm + offset, wanted - offset);
@@ -344,24 +310,20 @@ void BtAudioBridge::http_wav_task_(void *arg) {
     }
     remaining -= static_cast<uint32_t>(wanted);
   }
-
   self->engine_test_active_ = true;
   self->publish_event_("HTTP WAV: PCM playback started");
-
   while (remaining > 0 && self->engine_test_active_) {
     if (!self->a2dp_source_.is_active()) {
       ESP_LOGW(HTTP_TAG, "Bluetooth speaker disconnected during HTTP WAV playback");
       self->publish_event_("HTTP WAV: speaker disconnected");
       break;
     }
-
     const size_t wanted = remaining > sizeof(pcm) ? sizeof(pcm) : remaining;
     if (!read_exact(client, pcm, wanted)) {
       ESP_LOGE(HTTP_TAG, "WAV data ended unexpectedly");
       self->publish_event_("HTTP WAV: network/data error");
       break;
     }
-
     size_t offset = 0;
     while (offset < wanted && self->engine_test_active_) {
       const size_t written = self->audio_engine_.write(pcm + offset, wanted - offset);
@@ -370,25 +332,21 @@ void BtAudioBridge::http_wav_task_(void *arg) {
     }
     remaining -= static_cast<uint32_t>(wanted);
   }
-
   const TickType_t drain_start = xTaskGetTickCount();
   while (self->audio_engine_.available() > 0 &&
          (xTaskGetTickCount() - drain_start) < pdMS_TO_TICKS(1000) &&
          self->a2dp_source_.is_active()) {
     vTaskDelay(pdMS_TO_TICKS(5));
   }
-
   self->engine_test_active_ = false;
   self->audio_engine_.clear();
   esp_http_client_close(client);
   esp_http_client_cleanup(client);
-
   if (remaining == 0) {
     self->publish_event_("HTTP WAV: playback finished");
   } else {
     self->publish_event_("HTTP WAV: playback stopped");
   }
-
   vTaskDelete(nullptr);
 }
 
