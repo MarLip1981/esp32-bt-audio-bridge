@@ -119,7 +119,7 @@ void BtAudioBridge::play_http_wav() {
   BaseType_t result = xTaskCreate(
       &BtAudioBridge::http_wav_task_,
       "bt_http_wav",
-      6144,
+      4096,
       this,
       2,
       nullptr);
