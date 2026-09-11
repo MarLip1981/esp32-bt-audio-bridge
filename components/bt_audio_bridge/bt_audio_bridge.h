@@ -71,6 +71,10 @@ class BtAudioBridge : public Component {
   void on_real_rssi(int rssi);
   void on_battery_status(esp_avrc_batt_stat_t status);
 
+  // Public only so the static FreeRTOS bootstrap in bt_http_wav.cpp can bind
+  // the task entry point without allocating or creating a task at Play time.
+  static void http_wav_task_(void *arg);
+
   bool is_connected();
   const char *get_status();
 
@@ -85,7 +89,6 @@ class BtAudioBridge : public Component {
   static int32_t test_tone_callback_(uint8_t *data, int32_t len);
   static int32_t engine_audio_callback_(uint8_t *data, int32_t len);
   static void engine_test_task_(void *arg);
-  static void http_wav_task_(void *arg);
   int32_t generate_test_tone_(uint8_t *data, int32_t len);
   void publish_status_();
   void publish_event_(const char *event);
