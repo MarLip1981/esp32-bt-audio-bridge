@@ -8,9 +8,8 @@
 # - zapamiętanie + auto-reconnect + synchronizacja aktualnego peer'a: OK
 # - testowe audio: OK
 # - diagnostyka Wi-Fi / RAM / CPU / Bluetooth: DODANA
-# - Audio Engine: stały callback A2DP + 24 KiB ring buffer PCM: OK
+# - Audio Engine: stały callback A2DP + ring buffer PCM: OK
 # - HTTP/HTTPS WAV -> PCM 44.1 kHz / 16 bit / stereo -> Audio Engine: DODANE
-# - certyfikat HTTPS: ESP-IDF mbedTLS certificate bundle
 #
 # OGRANICZENIE TEGO ETAPU:
 # - WAV musi być PCM 44.1 kHz / 16 bit / stereo
@@ -54,6 +53,7 @@ text:
     name: "HTTP WAV URL"
     mode: text
     optimistic: true
+    restore_value: true
     max_length: 255
     on_value:
       then:
