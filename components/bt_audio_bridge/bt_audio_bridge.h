@@ -93,6 +93,7 @@ class BtAudioBridge : public Component {
   void clear_devices_();
   void start_a2dp_();
   void start_http_worker_();
+  void http_wav_playback_();
   void load_saved_speaker_();
   void save_speaker_();
   void sync_current_speaker_();
