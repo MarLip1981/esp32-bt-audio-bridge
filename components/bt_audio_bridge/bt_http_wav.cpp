@@ -8,7 +8,11 @@
 #include <esp_heap_caps.h>
 #include <esp_system.h>
 
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
 #include <cstring>
+#include <string>
 
 namespace esphome {
 namespace bt_audio_bridge {
@@ -16,6 +20,12 @@ namespace bt_audio_bridge {
 static const char *const HTTP_TAG = "bt_http_wav";
 
 namespace {
+
+// Keep the HTTP task stack out of the heap. Bluetooth A2DP needs contiguous
+// heap blocks for SBC/media buffers, so creating this task dynamically can
+// make an otherwise healthy heap temporarily unavailable to BT.
+static StaticTask_t http_wav_task_tcb;
+static StackType_t http_wav_task_stack[4096];
 
 void log_heap(const char *stage) {
   ESP_LOGI(HTTP_TAG, "Heap %s: free=%u largest=%u", stage,
@@ -112,12 +122,15 @@ void BtAudioBridge::play_http_wav() {
     return;
   }
   log_heap("before HTTP task");
-  BaseType_t result = xTaskCreate(&BtAudioBridge::http_wav_task_, "bt_http_wav", 3072, this, 2, nullptr);
-  if (result != pdPASS) {
-    ESP_LOGE(HTTP_TAG, "HTTP WAV task creation failed");
+  TaskHandle_t task = xTaskCreateStatic(&BtAudioBridge::http_wav_task_, "bt_http_wav",
+                                        sizeof(http_wav_task_stack) / sizeof(http_wav_task_stack[0]),
+                                        this, 2, http_wav_task_stack, &http_wav_task_tcb);
+  if (task == nullptr) {
+    ESP_LOGE(HTTP_TAG, "HTTP WAV static task creation failed");
     this->publish_event_("HTTP WAV: task FAILED");
     return;
   }
+  ESP_LOGI(HTTP_TAG, "HTTP WAV task created statically");
   this->publish_event_("HTTP WAV: download started");
 }
 
