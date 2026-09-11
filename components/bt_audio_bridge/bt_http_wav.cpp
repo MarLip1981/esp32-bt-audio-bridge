@@ -114,15 +114,7 @@ void BtAudioBridge::play_http_wav() {
     return;
   }
 
-  log_heap("before audio engine");
-  if (!this->audio_engine_.begin()) {
-    ESP_LOGE(HTTP_TAG, "Audio engine buffer allocation failed");
-    this->publish_event_("HTTP WAV: audio buffer FAILED");
-    return;
-  }
-
-  this->audio_engine_.clear();
-  log_heap("after audio engine");
+  log_heap("before HTTP task");
 
   BaseType_t result = xTaskCreate(
       &BtAudioBridge::http_wav_task_,
@@ -160,7 +152,6 @@ void BtAudioBridge::http_wav_task_(void *arg) {
     ESP_LOGE(HTTP_TAG, "HTTP client init failed");
     self->publish_event_("HTTP WAV: HTTP init FAILED");
     self->engine_test_active_ = false;
-    self->audio_engine_.clear();
     log_heap("after HTTP init FAILED");
     vTaskDelete(nullptr);
     return;
@@ -173,7 +164,6 @@ void BtAudioBridge::http_wav_task_(void *arg) {
     self->publish_event_("HTTP WAV: HTTP open FAILED");
     esp_http_client_cleanup(client);
     self->engine_test_active_ = false;
-    self->audio_engine_.clear();
     log_heap("after HTTP open FAILED");
     vTaskDelete(nullptr);
     return;
@@ -188,7 +178,6 @@ void BtAudioBridge::http_wav_task_(void *arg) {
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
     self->engine_test_active_ = false;
-    self->audio_engine_.clear();
     vTaskDelete(nullptr);
     return;
   }
@@ -199,7 +188,6 @@ void BtAudioBridge::http_wav_task_(void *arg) {
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
     self->engine_test_active_ = false;
-    self->audio_engine_.clear();
     vTaskDelete(nullptr);
     return;
   }
@@ -207,6 +195,22 @@ void BtAudioBridge::http_wav_task_(void *arg) {
   ESP_LOGI(HTTP_TAG, "HTTP connected, content-length=%lld, chunked=%s",
            static_cast<long long>(content_length),
            esp_http_client_is_chunked_response(client) ? "yes" : "no");
+
+  // TLS is the RAM-critical part. Allocate the PCM ring buffer only after
+  // the TLS connection is established, so the two large allocations do not
+  // compete for the same contiguous heap during the handshake.
+  if (!self->audio_engine_.begin()) {
+    ESP_LOGE(HTTP_TAG, "Audio engine buffer allocation failed after HTTP connect");
+    self->publish_event_("HTTP WAV: audio buffer FAILED");
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
+    self->engine_test_active_ = false;
+    log_heap("after audio buffer FAILED");
+    vTaskDelete(nullptr);
+    return;
+  }
+  self->audio_engine_.clear();
+  log_heap("after audio buffer allocation");
 
   uint8_t header[12];
   if (!read_exact(client, header, sizeof(header)) || !is_fourcc(header, "RIFF") || !is_fourcc(header + 8, "WAVE")) {
