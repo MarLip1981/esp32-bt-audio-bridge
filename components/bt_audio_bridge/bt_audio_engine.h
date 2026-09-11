@@ -11,8 +11,8 @@ namespace bt_audio_bridge {
 
 class BtAudioEngine {
  public:
-  // 8 KiB of raw PCM = about 45 ms at 44.1 kHz / 16-bit / stereo.
-  // Keeps a useful audio prefill while releasing heap for Bluetooth media buffers.
+  // 8 KiB raw PCM. The storage is static so HTTP playback never allocates
+  // a stream buffer from the heap while Bluetooth A2DP is running.
   static constexpr size_t BUFFER_SIZE = 8 * 1024;
   static constexpr size_t TRIGGER_LEVEL = 1;
 
@@ -20,7 +20,6 @@ class BtAudioEngine {
   void end();
   void clear();
 
-  // Non-blocking producer/consumer operations.
   size_t write(const uint8_t *data, size_t len);
   size_t read(uint8_t *data, size_t len);
 
@@ -35,6 +34,8 @@ class BtAudioEngine {
 
  private:
   StreamBufferHandle_t buffer_{nullptr};
+  StaticStreamBuffer_t static_buffer_{};
+  uint8_t storage_[BUFFER_SIZE + 1]{};
   volatile uint32_t underruns_{0};
   volatile uint32_t overruns_{0};
   volatile uint32_t bytes_written_{0};
