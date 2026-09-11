@@ -92,7 +92,6 @@ class BtAudioBridge : public Component {
   void publish_device_(size_t index);
   void clear_devices_();
   void start_a2dp_();
-  void start_http_worker_();
   void http_wav_playback_();
   void load_saved_speaker_();
   void save_speaker_();
@@ -121,7 +120,6 @@ class BtAudioBridge : public Component {
   bool test_tone_active_{false};
   volatile bool engine_test_active_{false};
   volatile bool http_wav_requested_{false};
-  bool http_worker_started_{false};
   uint32_t auto_connect_started_{0};
   uint32_t test_tone_until_{0};
   uint32_t test_tone_phase_{0};
