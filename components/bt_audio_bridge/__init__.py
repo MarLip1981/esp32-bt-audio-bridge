@@ -18,6 +18,7 @@ CONF_RESET_REASON = "reset_reason"
 CONF_DEVICE = "device"
 CONF_RSSI = "rssi"
 CONF_BATTERY = "battery"
+CONF_AUDIO_URL = "audio_url"
 CONF_DEVICES = "devices"
 CONF_TEXT_SENSOR = "text_sensor"
 CONF_DIAGNOSTICS = "diagnostics"
@@ -93,6 +94,7 @@ CONFIG_SCHEMA = cv.Schema({
     cv.Optional(CONF_DEVICE): text_sensor.text_sensor_schema(),
     cv.Optional(CONF_RSSI): sensor.sensor_schema(unit_of_measurement="dBm", accuracy_decimals=0),
     cv.Optional(CONF_BATTERY): text_sensor.text_sensor_schema(),
+    cv.Optional(CONF_AUDIO_URL): cv.string_strict,
     cv.Optional(CONF_DEVICES, default=[]): cv.All(
         cv.ensure_list(DEVICE_SLOT_SCHEMA),
         cv.Length(max=8),
@@ -158,6 +160,9 @@ async def to_code(config):
     if battery_config := config.get(CONF_BATTERY):
         battery_sensor = await text_sensor.new_text_sensor(battery_config)
         cg.add(var.set_battery_sensor(battery_sensor))
+
+    if audio_url := config.get(CONF_AUDIO_URL):
+        cg.add(var.set_audio_url(audio_url))
 
     for slot in config.get(CONF_DEVICES, []):
         slot_sensor = await text_sensor.new_text_sensor(slot[CONF_TEXT_SENSOR])
