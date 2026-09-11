@@ -11,8 +11,10 @@ namespace bt_audio_bridge {
 
 class BtAudioEngine {
  public:
-  // 24 KiB of raw PCM = about 136 ms at 44.1 kHz / 16-bit / stereo.
-  static constexpr size_t BUFFER_SIZE = 24 * 1024;
+  // 12 KiB of raw PCM = about 68 ms at 44.1 kHz / 16-bit / stereo.
+  // Keeps enough buffering for A2DP while leaving significantly more heap
+  // available for Bluetooth media buffers and HTTPS/TLS.
+  static constexpr size_t BUFFER_SIZE = 12 * 1024;
   static constexpr size_t TRIGGER_LEVEL = 1;
 
   bool begin();
