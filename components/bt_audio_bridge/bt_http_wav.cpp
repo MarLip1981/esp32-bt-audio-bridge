@@ -20,10 +20,11 @@ static const char *const HTTP_TAG = "bt_http_wav";
 
 namespace {
 
-// Created once at component setup. The Play button only signals this worker;
-// it never creates a FreeRTOS task while A2DP is active.
+// Created once, before normal application work. The Play button only signals
+// this worker; it never creates a FreeRTOS task while A2DP is active.
 static StaticTask_t http_wav_task_tcb;
 static StackType_t http_wav_task_stack[4096];
+static TaskHandle_t http_wav_task_handle = nullptr;
 
 void log_heap(const char *stage) {
   ESP_LOGI(HTTP_TAG, "Heap %s: free=%u largest=%u", stage,
@@ -83,6 +84,19 @@ bool skip_bytes(esp_http_client_handle_t client, uint32_t length) {
   return true;
 }
 
+// FreeRTOS explicitly permits static task creation before the scheduler has
+// started. This removes the last Play-time task-creation/heap-fragmentation
+// point from the WAV path.
+struct HttpWorkerBootstrap {
+  HttpWorkerBootstrap() {
+    http_wav_task_handle = xTaskCreateStatic(&BtAudioBridge::http_wav_task_, "bt_http_wav",
+                                             sizeof(http_wav_task_stack) / sizeof(http_wav_task_stack[0]),
+                                             nullptr, 2, http_wav_task_stack, &http_wav_task_tcb);
+  }
+};
+
+HttpWorkerBootstrap http_worker_bootstrap;
+
 }  // namespace
 
 void BtAudioBridge::set_audio_url(const char *url) {
@@ -94,21 +108,6 @@ void BtAudioBridge::set_audio_url(const char *url) {
   std::strncpy(this->audio_url_, url, sizeof(this->audio_url_) - 1);
   this->audio_url_[sizeof(this->audio_url_) - 1] = '\0';
   ESP_LOGI(HTTP_TAG, "Audio URL updated: %s", this->audio_url_);
-}
-
-void BtAudioBridge::start_http_worker_() {
-  if (this->http_worker_started_) return;
-
-  TaskHandle_t task = xTaskCreateStatic(&BtAudioBridge::http_wav_task_, "bt_http_wav",
-                                        sizeof(http_wav_task_stack) / sizeof(http_wav_task_stack[0]),
-                                        this, 2, http_wav_task_stack, &http_wav_task_tcb);
-  if (task == nullptr) {
-    ESP_LOGE(HTTP_TAG, "Permanent HTTP WAV worker creation failed");
-    this->publish_event_("HTTP WAV: worker FAILED");
-    return;
-  }
-  this->http_worker_started_ = true;
-  ESP_LOGI(HTTP_TAG, "Permanent HTTP WAV worker started");
 }
 
 void BtAudioBridge::play_http_wav() {
@@ -134,8 +133,8 @@ void BtAudioBridge::play_http_wav() {
     this->publish_event_("HTTP WAV: URL must use http:// or https://");
     return;
   }
-  if (!this->http_worker_started_) {
-    ESP_LOGE(HTTP_TAG, "HTTP WAV worker is not running");
+  if (http_wav_task_handle == nullptr) {
+    ESP_LOGE(HTTP_TAG, "Permanent HTTP WAV worker is unavailable");
     this->publish_event_("HTTP WAV: worker unavailable");
     return;
   }
@@ -146,11 +145,12 @@ void BtAudioBridge::play_http_wav() {
 }
 
 void BtAudioBridge::http_wav_task_(void *arg) {
-  auto *self = static_cast<BtAudioBridge *>(arg);
-  ESP_LOGI(HTTP_TAG, "HTTP worker task entered");
+  (void) arg;
+  ESP_LOGI(HTTP_TAG, "Permanent HTTP worker task entered");
 
   for (;;) {
-    if (!self->http_wav_requested_) {
+    BtAudioBridge *self = global_bt_audio_bridge;
+    if (self == nullptr || !self->http_wav_requested_) {
       vTaskDelay(pdMS_TO_TICKS(10));
       continue;
     }
@@ -222,8 +222,6 @@ void BtAudioBridge::http_wav_playback_() {
            static_cast<long long>(content_length),
            esp_http_client_is_chunked_response(client) ? "yes" : "no");
 
-  // The PCM engine is static, so this does not consume heap at the moment
-  // Bluetooth is already streaming.
   if (!this->audio_engine_.begin()) {
     ESP_LOGE(HTTP_TAG, "Audio engine static buffer init failed");
     this->publish_event_("HTTP WAV: audio buffer FAILED");
