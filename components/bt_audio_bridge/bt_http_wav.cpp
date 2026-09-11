@@ -81,10 +81,12 @@ bool skip_bytes(esp_http_client_handle_t client, uint32_t length) {
 void BtAudioBridge::set_audio_url(const char *url) {
   if (url == nullptr) {
     this->audio_url_[0] = '\0';
+    ESP_LOGI(HTTP_TAG, "Audio URL cleared");
     return;
   }
   std::strncpy(this->audio_url_, url, sizeof(this->audio_url_) - 1);
   this->audio_url_[sizeof(this->audio_url_) - 1] = '\0';
+  ESP_LOGI(HTTP_TAG, "Audio URL updated: %s", this->audio_url_);
 }
 
 void BtAudioBridge::play_http_wav() {
@@ -116,16 +118,10 @@ void BtAudioBridge::play_http_wav() {
 
   log_heap("before HTTP task");
 
-  // FreeRTOS stack sizes on ESP32 are measured in words (4 bytes), not bytes.
-  // 4096 therefore reserved ~16 KiB just for this task and left too little
-  // contiguous RAM for mbedTLS.  2048 reserves ~8 KiB while leaving the audio
-  // path and WAV parser unchanged.
-  constexpr uint32_t HTTP_WAV_TASK_STACK_WORDS = 2048;
-
   BaseType_t result = xTaskCreate(
       &BtAudioBridge::http_wav_task_,
       "bt_http_wav",
-      HTTP_WAV_TASK_STACK_WORDS,
+      3072,
       this,
       2,
       nullptr);
@@ -144,6 +140,8 @@ void BtAudioBridge::http_wav_task_(void *arg) {
   std::string url(self->audio_url_);
   const bool https_url = std::strncmp(url.c_str(), "https://", 8) == 0;
 
+  ESP_LOGI(HTTP_TAG, "HTTP task started: stack free words=%u URL=%s",
+           static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)), url.c_str());
   log_heap("before HTTP init");
 
   esp_http_client_config_t config{};
@@ -202,9 +200,6 @@ void BtAudioBridge::http_wav_task_(void *arg) {
            static_cast<long long>(content_length),
            esp_http_client_is_chunked_response(client) ? "yes" : "no");
 
-  // TLS is the RAM-critical part. Allocate the PCM ring buffer only after
-  // the TLS connection is established, so the two large allocations do not
-  // compete for the same contiguous heap during the handshake.
   if (!self->audio_engine_.begin()) {
     ESP_LOGE(HTTP_TAG, "Audio engine buffer allocation failed after HTTP connect");
     self->publish_event_("HTTP WAV: audio buffer FAILED");
