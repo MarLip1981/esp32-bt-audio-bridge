@@ -9,7 +9,6 @@
 #include <esp_system.h>
 
 #include <cstring>
-#include <string>
 
 namespace esphome {
 namespace bt_audio_bridge {
@@ -124,13 +123,18 @@ void BtAudioBridge::play_http_wav() {
 
 void BtAudioBridge::http_wav_task_(void *arg) {
   auto *self = static_cast<BtAudioBridge *>(arg);
-  std::string url(self->audio_url_);
-  const bool https_url = std::strncmp(url.c_str(), "https://", 8) == 0;
+  ESP_LOGI(HTTP_TAG, "HTTP task entered");
+  log_heap("at HTTP task entry");
+
+  char url[256];
+  std::strncpy(url, self->audio_url_, sizeof(url) - 1);
+  url[sizeof(url) - 1] = '\0';
+  const bool https_url = std::strncmp(url, "https://", 8) == 0;
   ESP_LOGI(HTTP_TAG, "HTTP task started: stack free words=%u URL=%s",
-           static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)), url.c_str());
+           static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)), url);
   log_heap("before HTTP init");
   esp_http_client_config_t config{};
-  config.url = url.c_str();
+  config.url = url;
   config.timeout_ms = 5000;
   config.buffer_size = 2048;
   config.buffer_size_tx = 512;
