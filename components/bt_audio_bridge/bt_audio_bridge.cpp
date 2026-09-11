@@ -373,8 +373,18 @@ void BtAudioBridge::dump_config() {
 
 void BtAudioBridge::start_scan() {
   if (this->a2dp_started_) {
-    this->publish_event_("SCAN: rejected, A2DP already started");
-    return;
+    if (this->a2dp_source_.is_active()) {
+      this->publish_event_("SCAN: rejected, speaker is connected");
+      return;
+    }
+    if (this->a2dp_source_.is_discovery_active()) {
+      this->scanning_ = true;
+      this->publish_event_("SCAN: already running");
+      return;
+    }
+    ESP_LOGI(TAG, "Restarting idle A2DP stack for a fresh scan");
+    this->a2dp_source_.end();
+    this->a2dp_started_ = false;
   }
   this->auto_connect_pending_ = false;
   this->clear_devices_();
@@ -433,10 +443,20 @@ void BtAudioBridge::disconnect() {
 }
 
 void BtAudioBridge::forget_speaker() {
+  ESP_LOGI(TAG, "Forget speaker requested");
   this->auto_connect_pending_ = false;
   this->scan_requested_ = false;
-  if (this->a2dp_started_) { this->a2dp_source_.end(); this->a2dp_started_ = false; }
-  this->a2dp_source_.clean_last_connection();
+  this->test_tone_active_ = false;
+
+  // BluetoothA2DPSource::end() already clears its own persisted last
+  // connection. Calling clean_last_connection() a second time AFTER end()
+  // is unsafe because the A2DP stack has already been deinitialized.
+  // That second call was the likely source of the observed panic/reboot.
+  if (this->a2dp_started_) {
+    this->a2dp_source_.end();
+    this->a2dp_started_ = false;
+  }
+
   nvs_handle_t handle;
   if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
     nvs_erase_key(handle, NVS_NAME_KEY);
@@ -444,17 +464,17 @@ void BtAudioBridge::forget_speaker() {
     nvs_commit(handle);
     nvs_close(handle);
   }
+
   this->selected_name_[0] = '\0';
   this->selected_mac_[0] = '\0';
   this->connected_ = false;
   this->scanning_ = false;
-  this->test_tone_active_ = false;
   if (this->device_sensor_ != nullptr) this->device_sensor_->publish_state("NONE");
   if (this->rssi_sensor_ != nullptr) this->rssi_sensor_->publish_state(NAN);
   if (this->battery_sensor_ != nullptr) this->battery_sensor_->publish_state("UNKNOWN");
   std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
   this->publish_status_();
-  this->publish_event_("BT: saved speaker forgotten");
+  this->publish_event_("BT: saved speaker forgotten - ready for new scan");
 }
 
 bool BtAudioBridge::is_connected() { return this->connected_; }
