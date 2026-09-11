@@ -64,6 +64,7 @@ text:
       then:
         - lambda: |-
             id(bt_audio_bridge_id).set_audio_url(x.c_str());
+            ESP_LOGI("bt_http_wav", "HA URL value received: %s", x.c_str());
 
 bt_audio_bridge:
   id: bt_audio_bridge_id
