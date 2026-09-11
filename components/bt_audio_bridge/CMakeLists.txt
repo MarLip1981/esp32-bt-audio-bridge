@@ -4,6 +4,7 @@ idf_component_register(
         "bt_audio_engine.cpp"
         "bt_audio_engine_test.cpp"
         "bt_http_wav.cpp"
+        "bt_classic_memory.cpp"
     INCLUDE_DIRS
         "."
     REQUIRES
