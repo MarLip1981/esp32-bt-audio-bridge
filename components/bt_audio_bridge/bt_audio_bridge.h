@@ -9,6 +9,9 @@
 
 #include <BluetoothA2DPSource.h>
 
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
 namespace esphome {
 namespace bt_audio_bridge {
 
@@ -89,6 +92,7 @@ class BtAudioBridge : public Component {
   void publish_device_(size_t index);
   void clear_devices_();
   void start_a2dp_();
+  void start_http_worker_();
   void load_saved_speaker_();
   void save_speaker_();
   void sync_current_speaker_();
@@ -115,6 +119,8 @@ class BtAudioBridge : public Component {
   bool auto_connect_pending_{false};
   bool test_tone_active_{false};
   volatile bool engine_test_active_{false};
+  volatile bool http_wav_requested_{false};
+  bool http_worker_started_{false};
   uint32_t auto_connect_started_{0};
   uint32_t test_tone_until_{0};
   uint32_t test_tone_phase_{0};
