@@ -116,10 +116,16 @@ void BtAudioBridge::play_http_wav() {
 
   log_heap("before HTTP task");
 
+  // FreeRTOS stack sizes on ESP32 are measured in words (4 bytes), not bytes.
+  // 4096 therefore reserved ~16 KiB just for this task and left too little
+  // contiguous RAM for mbedTLS.  2048 reserves ~8 KiB while leaving the audio
+  // path and WAV parser unchanged.
+  constexpr uint32_t HTTP_WAV_TASK_STACK_WORDS = 2048;
+
   BaseType_t result = xTaskCreate(
       &BtAudioBridge::http_wav_task_,
       "bt_http_wav",
-      4096,
+      HTTP_WAV_TASK_STACK_WORDS,
       this,
       2,
       nullptr);
