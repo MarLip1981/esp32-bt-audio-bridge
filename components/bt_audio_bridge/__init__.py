@@ -128,6 +128,8 @@ async def to_code(config):
     add_idf_sdkconfig_option("CONFIG_BT_A2DP_ENABLE", True)
     add_idf_sdkconfig_option("CONFIG_BT_BLE_ENABLED", False)
     add_idf_sdkconfig_option("CONFIG_BT_CLASSIC_ENABLE_POWER_CTRL_VSC", True)
+    add_idf_sdkconfig_option("CONFIG_MBEDTLS_CERTIFICATE_BUNDLE", True)
+    add_idf_sdkconfig_option("CONFIG_MBEDTLS_DEFAULT_CERTIFICATE_BUNDLE", True)
 
     add_idf_component(
         name="ESP32-A2DP",
