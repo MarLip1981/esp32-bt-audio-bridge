@@ -61,7 +61,7 @@ bool is_fourcc(const uint8_t *p, const char *text) {
 }
 
 bool skip_bytes(esp_http_client_handle_t client, uint32_t length) {
-  uint8_t buffer[256];
+  static uint8_t buffer[128];
   uint32_t remaining = length;
   while (remaining > 0) {
     const size_t wanted = remaining > sizeof(buffer) ? sizeof(buffer) : remaining;
@@ -121,6 +121,9 @@ void BtAudioBridge::play_http_wav() {
     return;
   }
 
+  std::strncpy(this->http_playback_url_, this->audio_url_, sizeof(this->http_playback_url_) - 1);
+  this->http_playback_url_[sizeof(this->http_playback_url_) - 1] = '\0';
+
   log_heap("before HTTP request");
   this->http_wav_busy_ = true;
   xTaskNotifyGive(this->http_wav_task_handle_);
@@ -145,10 +148,8 @@ void BtAudioBridge::http_wav_task_(void *arg) {
 }
 
 void BtAudioBridge::http_wav_playback_() {
-  char url[sizeof(this->audio_url_)];
-  std::strncpy(url, this->audio_url_, sizeof(url) - 1);
-  url[sizeof(url) - 1] = '\0';
-  const bool https_url = std::strncmp(url, "https://", 8) == 0;
+  const char *url = this->http_playback_url_;
+  bool https_url = std::strncmp(url, "https://", 8) == 0;
 
   ESP_LOGI(HTTP_TAG, "HTTP playback request: stack free words=%u URL=%s",
            static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)), url);
@@ -157,8 +158,11 @@ void BtAudioBridge::http_wav_playback_() {
   esp_http_client_config_t config{};
   config.url = url;
   config.timeout_ms = 5000;
-  config.buffer_size = 2048;
-  config.buffer_size_tx = 512;
+  config.buffer_size = 1024;
+  config.buffer_size_tx = 256;
+  config.keep_alive_enable = false;
+  config.disable_auto_redirect = true;
+  config.max_redirection_count = 5;
   config.crt_bundle_attach = https_url ? esp_crt_bundle_attach : nullptr;
 
   esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -171,19 +175,65 @@ void BtAudioBridge::http_wav_playback_() {
   }
 
   log_heap("after HTTP init");
-  esp_err_t err = esp_http_client_open(client, 0);
-  if (err != ESP_OK) {
-    ESP_LOGE(HTTP_TAG, "HTTP open failed: %s", esp_err_to_name(err));
-    this->publish_event_("HTTP WAV: HTTP open FAILED");
+
+  int64_t content_length = -1;
+  int http_code = 0;
+  bool opened = false;
+
+  for (int redirect = 0; redirect <= 5; redirect++) {
+    esp_err_t err = esp_http_client_open(client, 0);
+    if (err != ESP_OK) {
+      ESP_LOGE(HTTP_TAG, "HTTP open failed: %s", esp_err_to_name(err));
+      this->publish_event_("HTTP WAV: HTTP open FAILED");
+      esp_http_client_cleanup(client);
+      this->engine_test_active_ = false;
+      log_heap("after HTTP open FAILED");
+      return;
+    }
+    opened = true;
+
+    log_heap(redirect == 0 ? "after HTTP open" : "after HTTP redirect open");
+    content_length = esp_http_client_fetch_headers(client);
+    http_code = esp_http_client_get_status_code(client);
+
+    if (http_code == 301 || http_code == 302 || http_code == 303 || http_code == 307 || http_code == 308) {
+      if (redirect == 5) {
+        ESP_LOGE(HTTP_TAG, "HTTP redirect limit reached, code=%d", http_code);
+        this->publish_event_("HTTP WAV: redirect limit FAILED");
+        esp_http_client_close(client);
+        esp_http_client_cleanup(client);
+        this->engine_test_active_ = false;
+        return;
+      }
+
+      ESP_LOGI(HTTP_TAG, "HTTP redirect %d: status=%d", redirect + 1, http_code);
+      esp_err_t redirect_err = esp_http_client_set_redirection(client);
+      esp_http_client_close(client);
+      opened = false;
+      if (redirect_err != ESP_OK) {
+        ESP_LOGE(HTTP_TAG, "HTTP redirect handling failed: %s", esp_err_to_name(redirect_err));
+        this->publish_event_("HTTP WAV: redirect FAILED");
+        esp_http_client_cleanup(client);
+        this->engine_test_active_ = false;
+        return;
+      }
+
+      https_url = std::strncmp(this->http_playback_url_, "https://", 8) == 0;
+      ESP_LOGI(HTTP_TAG, "HTTP redirect accepted; next URL uses %s", https_url ? "HTTPS" : "HTTP");
+      continue;
+    }
+
+    break;
+  }
+
+  if (!opened) {
+    ESP_LOGE(HTTP_TAG, "HTTP connection was not left open");
+    this->publish_event_("HTTP WAV: connection FAILED");
     esp_http_client_cleanup(client);
     this->engine_test_active_ = false;
-    log_heap("after HTTP open FAILED");
     return;
   }
 
-  log_heap("after HTTP open");
-  const int64_t content_length = esp_http_client_fetch_headers(client);
-  const int http_code = esp_http_client_get_status_code(client);
   if (http_code != 200) {
     ESP_LOGE(HTTP_TAG, "HTTP GET failed, code=%d", http_code);
     this->publish_event_("HTTP WAV: HTTP GET FAILED");
@@ -317,12 +367,12 @@ void BtAudioBridge::http_wav_playback_() {
   ESP_LOGI(HTTP_TAG, "WAV accepted: PCM 44.1 kHz / 16 bit / stereo, data=%u bytes", static_cast<unsigned>(data_size));
   this->publish_event_("HTTP WAV: WAV accepted, pre-filling PCM");
 
-  uint8_t pcm[1024];
+  uint8_t *pcm = this->http_pcm_buffer_;
   uint32_t remaining = data_size;
   constexpr uint8_t PREFILL_PERCENT = 60;
 
   while (remaining > 0 && this->audio_engine_.fill_percent() < PREFILL_PERCENT) {
-    const size_t wanted = remaining > sizeof(pcm) ? sizeof(pcm) : remaining;
+    const size_t wanted = remaining > 1024 ? 1024 : remaining;
     if (!read_exact(client, pcm, wanted)) {
       ESP_LOGE(HTTP_TAG, "WAV data ended during prefill");
       this->publish_event_("HTTP WAV: truncated PCM data");
@@ -352,7 +402,7 @@ void BtAudioBridge::http_wav_playback_() {
       break;
     }
 
-    const size_t wanted = remaining > sizeof(pcm) ? sizeof(pcm) : remaining;
+    const size_t wanted = remaining > 1024 ? 1024 : remaining;
     if (!read_exact(client, pcm, wanted)) {
       ESP_LOGE(HTTP_TAG, "WAV data ended unexpectedly");
       this->publish_event_("HTTP WAV: network/data error");
