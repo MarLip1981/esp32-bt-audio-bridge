@@ -156,6 +156,7 @@ void BtAudioBridge::http_wav_playback_() {
 
   esp_http_client_config_t config{};
   config.url = url;
+  config.addr_type = HTTP_ADDR_TYPE_INET;
   config.timeout_ms = 5000;
   config.buffer_size = 1024;
   config.buffer_size_tx = 256;
