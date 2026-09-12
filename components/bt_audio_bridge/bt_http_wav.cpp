@@ -7,6 +7,7 @@
 #include <esp_crt_bundle.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
+#include <esp_netif.h>
 
 #include <lwip/inet.h>
 #include <lwip/netdb.h>
@@ -27,25 +28,23 @@ void log_heap(const char *stage) {
            static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)));
 }
 
-void log_dns_resolution(const char *url) {
-  const char *host_start = std::strstr(url, "://");
-  host_start = host_start != nullptr ? host_start + 3 : url;
-
-  const char *host_end = std::strchr(host_start, '/');
-  if (host_end == nullptr) host_end = host_start + std::strlen(host_start);
-
-  const char *port_separator = std::strchr(host_start, ':');
-  if (port_separator != nullptr && port_separator < host_end) host_end = port_separator;
-
-  const size_t host_length = static_cast<size_t>(host_end - host_start);
-  if (host_length == 0 || host_length >= 128) {
-    ESP_LOGE(HTTP_TAG, "DNS diagnostic: invalid host in URL");
+void log_dns_server(const char *label, esp_netif_dns_type_t type) {
+  esp_netif_dns_info_t dns{};
+  const esp_err_t err = esp_netif_get_dns_info(nullptr, type, &dns);
+  if (err != ESP_OK) {
+    ESP_LOGW(HTTP_TAG, "DNS config: %s unavailable: %s", label, esp_err_to_name(err));
     return;
   }
 
-  char host[128] = {};
-  std::memcpy(host, host_start, host_length);
+  char address[INET_ADDRSTRLEN] = {};
+  if (inet_ntop(AF_INET, &dns.ip.u_addr.ip4, address, sizeof(address)) == nullptr) {
+    ESP_LOGW(HTTP_TAG, "DNS config: %s present but IPv4 formatting failed", label);
+    return;
+  }
+  ESP_LOGI(HTTP_TAG, "DNS config: %s=%s", label, address);
+}
 
+void log_dns_host(const char *host) {
   ESP_LOGI(HTTP_TAG, "DNS resolve start: host=%s", host);
 
   struct addrinfo hints{};
@@ -70,6 +69,32 @@ void log_dns_resolution(const char *url) {
   }
 
   freeaddrinfo(result);
+}
+
+void log_dns_resolution(const char *url) {
+  log_dns_server("MAIN", ESP_NETIF_DNS_MAIN);
+  log_dns_server("BACKUP", ESP_NETIF_DNS_BACKUP);
+  log_dns_server("FALLBACK", ESP_NETIF_DNS_FALLBACK);
+  log_dns_host("google.com");
+
+  const char *host_start = std::strstr(url, "://");
+  host_start = host_start != nullptr ? host_start + 3 : url;
+
+  const char *host_end = std::strchr(host_start, '/');
+  if (host_end == nullptr) host_end = host_start + std::strlen(host_start);
+
+  const char *port_separator = std::strchr(host_start, ':');
+  if (port_separator != nullptr && port_separator < host_end) host_end = port_separator;
+
+  const size_t host_length = static_cast<size_t>(host_end - host_start);
+  if (host_length == 0 || host_length >= 128) {
+    ESP_LOGE(HTTP_TAG, "DNS diagnostic: invalid host in URL");
+    return;
+  }
+
+  char host[128] = {};
+  std::memcpy(host, host_start, host_length);
+  log_dns_host(host);
 }
 
 bool read_exact(esp_http_client_handle_t client, uint8_t *buffer, size_t length) {
@@ -212,8 +237,6 @@ void BtAudioBridge::http_wav_playback_() {
   config.keep_alive_enable = false;
   config.disable_auto_redirect = true;
   config.max_redirection_count = 5;
-  // Configure the CA bundle on the client even when the first URL is HTTP,
-  // because an HTTP 30x response may redirect to HTTPS.
   config.crt_bundle_attach = esp_crt_bundle_attach;
 
   esp_http_client_handle_t client = esp_http_client_init(&config);
