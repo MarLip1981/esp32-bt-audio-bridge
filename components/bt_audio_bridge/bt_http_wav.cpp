@@ -149,7 +149,6 @@ void BtAudioBridge::http_wav_task_(void *arg) {
 
 void BtAudioBridge::http_wav_playback_() {
   const char *url = this->http_playback_url_;
-  bool https_url = std::strncmp(url, "https://", 8) == 0;
 
   ESP_LOGI(HTTP_TAG, "HTTP playback request: stack free words=%u URL=%s",
            static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)), url);
@@ -163,7 +162,9 @@ void BtAudioBridge::http_wav_playback_() {
   config.keep_alive_enable = false;
   config.disable_auto_redirect = true;
   config.max_redirection_count = 5;
-  config.crt_bundle_attach = https_url ? esp_crt_bundle_attach : nullptr;
+  // Configure the CA bundle on the client even when the first URL is HTTP,
+  // because an HTTP 30x response may redirect to HTTPS.
+  config.crt_bundle_attach = esp_crt_bundle_attach;
 
   esp_http_client_handle_t client = esp_http_client_init(&config);
   if (client == nullptr) {
@@ -218,8 +219,7 @@ void BtAudioBridge::http_wav_playback_() {
         return;
       }
 
-      https_url = std::strncmp(this->http_playback_url_, "https://", 8) == 0;
-      ESP_LOGI(HTTP_TAG, "HTTP redirect accepted; next URL uses %s", https_url ? "HTTPS" : "HTTP");
+      ESP_LOGI(HTTP_TAG, "HTTP redirect accepted; reconnecting to redirected URL");
       continue;
     }
 
