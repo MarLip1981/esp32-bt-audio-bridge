@@ -100,7 +100,11 @@ static void bt_discovery_callback(esp_bt_gap_discovery_state_t state) {
   else global_bt_audio_bridge->on_discovery_stopped();
 }
 
-BtAudioBridge::BtAudioBridge() : a2dp_source_(this) {}
+BtAudioBridge::BtAudioBridge() : a2dp_source_(this) {
+  if (xTaskCreate(&BtAudioBridge::http_wav_task_, "bt_http_wav", 4096, this, 2, &this->http_wav_task_handle_) != pdPASS) {
+    this->http_wav_task_handle_ = nullptr;
+  }
+}
 
 void BtAudioBridge::on_device_found(const char *name, const char *mac, int rssi) {
   if (name == nullptr || mac == nullptr) return;
@@ -384,6 +388,7 @@ void BtAudioBridge::dump_config() {
   ESP_LOGCONFIG(TAG, "  Auto reconnect: enabled");
   ESP_LOGCONFIG(TAG, "  Startup saved-speaker reconnect: enabled");
   ESP_LOGCONFIG(TAG, "  Audio engine callback: permanent");
+  ESP_LOGCONFIG(TAG, "  HTTP WAV worker: persistent");
   ESP_LOGCONFIG(TAG, "  HA scan slots: %u", static_cast<unsigned>(this->device_slot_count_));
 }
 
