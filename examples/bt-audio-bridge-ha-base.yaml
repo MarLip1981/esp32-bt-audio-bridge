@@ -1,0 +1,312 @@
+# ============================================================================
+# BT AUDIO BRIDGE - CZYSTA KONFIGURACJA POD DOCELOWE AUDIO Z HOME ASSISTANT
+# ============================================================================
+# ESP32 DevKit V1 / ESP32-WROOM-32
+# Bluetooth Classic A2DP Source -> zewnętrzny głośnik Bluetooth
+#
+# TEN PLIK JEST NOWĄ BAZĄ PROJEKTU.
+#
+# Usunięto z konfiguracji cały eksperymentalny tor HTTP/HTTPS WAV:
+# - HTTPClient
+# - HTTP WAV URL
+# - automatyczne ustawianie URL po starcie
+# - przycisk Play HTTP WAV
+#
+# Pozostawiono:
+# - Bluetooth discovery
+# - wybór głośnika z 8 slotów
+# - reconnect / zapis wybranego głośnika obsługiwany przez komponent
+# - status, RSSI, bateria i diagnostykę
+# - testowe audio
+# - Audio Engine Test
+#
+# WAŻNE:
+# Ten przykład NIE udaje jeszcze gotowego media_playera Home Assistant.
+# Kolejnym etapem jest dodanie właściwego wejścia audio z HA do istniejącego
+# Audio Engine. Dzięki temu nie budujemy kolejnego toru HTTP WAV, tylko
+# bezpośrednio rozwijamy docelowy mechanizm audio.
+#
+# Docelowa architektura:
+#
+#   Home Assistant
+#        |
+#        | audio stream / PCM
+#        v
+#   BtAudioBridge
+#        |
+#        v
+#   BtAudioEngine
+#        |
+#        v
+#   ESP32-A2DP Source
+#        |
+#        v
+#   głośnik Bluetooth
+#
+# Docelowy format Audio Engine:
+# PCM / 44.1 kHz / 16 bit / stereo
+# ============================================================================
+
+esphome:
+  name: bt-audio-bridge
+  friendly_name: BT audio bridge
+
+esp32:
+  variant: esp32
+  framework:
+    type: arduino
+
+external_components:
+  - source: github://MarLip1981/esp32-bt-audio-bridge
+    components: [bt_audio_bridge]
+    refresh: 1s
+
+logger:
+
+api:
+  encryption:
+    key: "REPLACE_WITH_YOUR_32_BYTE_BASE64_API_KEY"
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: BT audio bridge
+
+captive_portal:
+
+bt_audio_bridge:
+  id: bt_audio_bridge_id
+
+  # --------------------------------------------------------------------------
+  # Podstawowy stan Bluetooth
+  # --------------------------------------------------------------------------
+  status:
+    name: "Bluetooth Status"
+
+  event:
+    name: "Bluetooth Event"
+
+  reset_reason:
+    name: "Bluetooth Reset Reason"
+
+  device:
+    name: "Bluetooth Selected Device"
+
+  rssi:
+    name: "Bluetooth RSSI"
+
+  battery:
+    name: "Bluetooth Battery Status"
+
+  # --------------------------------------------------------------------------
+  # Lista urządzeń znalezionych podczas skanowania.
+  # Każdy slot może być następnie użyty przez przycisk Connect.
+  # --------------------------------------------------------------------------
+  devices:
+    - text_sensor:
+        name: "Bluetooth Device 1"
+    - text_sensor:
+        name: "Bluetooth Device 2"
+    - text_sensor:
+        name: "Bluetooth Device 3"
+    - text_sensor:
+        name: "Bluetooth Device 4"
+    - text_sensor:
+        name: "Bluetooth Device 5"
+    - text_sensor:
+        name: "Bluetooth Device 6"
+    - text_sensor:
+        name: "Bluetooth Device 7"
+    - text_sensor:
+        name: "Bluetooth Device 8"
+
+  # --------------------------------------------------------------------------
+  # Diagnostyka przydatna podczas dalszej budowy toru audio.
+  # --------------------------------------------------------------------------
+  diagnostics:
+    wifi_rssi:
+      name: "WiFi RSSI"
+
+    wifi_signal:
+      name: "WiFi Signal"
+
+    wifi_channel:
+      name: "WiFi Channel"
+
+    wifi_tx_power:
+      name: "WiFi TX Power"
+
+    wifi_ssid:
+      name: "WiFi SSID"
+
+    wifi_phy:
+      name: "WiFi PHY"
+
+    wifi_status:
+      name: "WiFi Status"
+
+    wifi_uptime:
+      name: "WiFi Uptime"
+
+    cpu_load:
+      name: "CPU Load"
+
+    cpu_frequency:
+      name: "CPU Frequency"
+
+    heap_free:
+      name: "RAM Free"
+
+    heap_used:
+      name: "RAM Used"
+
+    heap_percent:
+      name: "RAM Used Percent"
+
+    heap_min_free:
+      name: "RAM Minimum Free"
+
+    heap_largest_block:
+      name: "RAM Largest Block"
+
+    bt_status:
+      name: "BT Status"
+
+    bt_controller:
+      name: "BT Controller"
+
+    bt_connections:
+      name: "BT Connections"
+
+    bt_reconnects:
+      name: "BT Reconnects"
+
+    bt_uptime:
+      name: "BT Uptime"
+
+# ============================================================================
+# PRZYCISKI STERUJĄCE BLUETOOTH
+# ============================================================================
+
+button:
+
+  - platform: template
+    name: "Bluetooth Scan"
+    icon: "mdi:bluetooth-audio"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).start_scan();
+
+  - platform: template
+    name: "Bluetooth Stop Scan"
+    icon: "mdi:bluetooth-off"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).stop_scan();
+
+  - platform: template
+    name: "Bluetooth Connect 1"
+    icon: "mdi:bluetooth-connect"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).connect_slot(0);
+
+  - platform: template
+    name: "Bluetooth Connect 2"
+    icon: "mdi:bluetooth-connect"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).connect_slot(1);
+
+  - platform: template
+    name: "Bluetooth Connect 3"
+    icon: "mdi:bluetooth-connect"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).connect_slot(2);
+
+  - platform: template
+    name: "Bluetooth Connect 4"
+    icon: "mdi:bluetooth-connect"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).connect_slot(3);
+
+  - platform: template
+    name: "Bluetooth Connect 5"
+    icon: "mdi:bluetooth-connect"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).connect_slot(4);
+
+  - platform: template
+    name: "Bluetooth Connect 6"
+    icon: "mdi:bluetooth-connect"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).connect_slot(5);
+
+  - platform: template
+    name: "Bluetooth Connect 7"
+    icon: "mdi:bluetooth-connect"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).connect_slot(6);
+
+  - platform: template
+    name: "Bluetooth Connect 8"
+    icon: "mdi:bluetooth-connect"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).connect_slot(7);
+
+  - platform: template
+    name: "Bluetooth Disconnect"
+    icon: "mdi:bluetooth-off"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).disconnect();
+
+  - platform: template
+    name: "Bluetooth Forget"
+    icon: "mdi:bluetooth-settings"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).forget_speaker();
+
+  # --------------------------------------------------------------------------
+  # Testy audio pozostają celowo dostępne.
+  # Nie używają HTTP i pozwalają sprawdzić, czy sam tor A2DP nadal działa.
+  # --------------------------------------------------------------------------
+
+  - platform: template
+    name: "Test Audio"
+    icon: "mdi:volume-high"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).start_test_tone();
+
+  - platform: template
+    name: "Stop Test Audio"
+    icon: "mdi:volume-off"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).stop_test_tone();
+
+  - platform: template
+    name: "Audio Engine Test"
+    icon: "mdi:audio-video"
+    on_press:
+      - lambda: |-
+          id(bt_audio_bridge_id).start_engine_test();
+
+# ============================================================================
+# KONIEC CZYSTEJ BAZY
+# ============================================================================
+# Nie ma tutaj HTTP WAV ani media_playera, ponieważ interfejs audio z HA
+# musi zostać dodany po stronie komponentu bt_audio_bridge.
+# ============================================================================
