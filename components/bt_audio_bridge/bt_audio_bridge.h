@@ -129,6 +129,8 @@ class BtAudioBridge : public Component {
   char status_[32]{"STARTING"};
   char battery_status_[24]{"UNKNOWN"};
   char audio_url_[256]{};
+  char http_playback_url_[256]{};
+  uint8_t http_pcm_buffer_[1024]{};
 
   int scan_cycles_{0};
   unsigned long last_status_check_{0};
