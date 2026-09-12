@@ -8,6 +8,10 @@
 #include <esp_heap_caps.h>
 #include <esp_system.h>
 
+#include <lwip/inet.h>
+#include <lwip/netdb.h>
+#include <lwip/sockets.h>
+
 #include <cstring>
 
 namespace esphome {
@@ -21,6 +25,51 @@ void log_heap(const char *stage) {
   ESP_LOGI(HTTP_TAG, "Heap %s: free=%u largest=%u", stage,
            static_cast<unsigned>(esp_get_free_heap_size()),
            static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)));
+}
+
+void log_dns_resolution(const char *url) {
+  const char *host_start = std::strstr(url, "://");
+  host_start = host_start != nullptr ? host_start + 3 : url;
+
+  const char *host_end = std::strchr(host_start, '/');
+  if (host_end == nullptr) host_end = host_start + std::strlen(host_start);
+
+  const char *port_separator = std::strchr(host_start, ':');
+  if (port_separator != nullptr && port_separator < host_end) host_end = port_separator;
+
+  const size_t host_length = static_cast<size_t>(host_end - host_start);
+  if (host_length == 0 || host_length >= 128) {
+    ESP_LOGE(HTTP_TAG, "DNS diagnostic: invalid host in URL");
+    return;
+  }
+
+  char host[128] = {};
+  std::memcpy(host, host_start, host_length);
+
+  ESP_LOGI(HTTP_TAG, "DNS resolve start: host=%s", host);
+
+  struct addrinfo hints{};
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+
+  struct addrinfo *result = nullptr;
+  const int err = getaddrinfo(host, nullptr, &hints, &result);
+  if (err != 0 || result == nullptr) {
+    ESP_LOGE(HTTP_TAG, "DNS resolve FAILED: host=%s getaddrinfo=%d result=%p", host, err,
+             static_cast<void *>(result));
+    if (result != nullptr) freeaddrinfo(result);
+    return;
+  }
+
+  char address[INET_ADDRSTRLEN] = {};
+  const auto *ipv4 = reinterpret_cast<const struct sockaddr_in *>(result->ai_addr);
+  if (inet_ntop(AF_INET, &ipv4->sin_addr, address, sizeof(address)) == nullptr) {
+    ESP_LOGE(HTTP_TAG, "DNS resolve OK but IPv4 formatting failed: host=%s", host);
+  } else {
+    ESP_LOGI(HTTP_TAG, "DNS resolve OK: host=%s ip=%s", host, address);
+  }
+
+  freeaddrinfo(result);
 }
 
 bool read_exact(esp_http_client_handle_t client, uint8_t *buffer, size_t length) {
@@ -183,6 +232,10 @@ void BtAudioBridge::http_wav_playback_() {
   bool opened = false;
 
   for (int redirect = 0; redirect <= 5; redirect++) {
+    if (redirect == 0) {
+      log_dns_resolution(url);
+    }
+
     esp_err_t err = esp_http_client_open(client, 0);
     if (err != ESP_OK) {
       ESP_LOGE(HTTP_TAG, "HTTP open failed: %s", esp_err_to_name(err));
@@ -258,25 +311,23 @@ void BtAudioBridge::http_wav_playback_() {
            esp_http_client_is_chunked_response(client) ? "yes" : "no");
 
   if (!this->audio_engine_.begin()) {
-    ESP_LOGE(HTTP_TAG, "Audio engine buffer allocation failed after HTTP connect");
-    this->publish_event_("HTTP WAV: audio buffer FAILED");
+    ESP_LOGE(HTTP_TAG, "Audio engine begin failed");
+    this->publish_event_("HTTP WAV: audio engine FAILED");
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
     this->engine_test_active_ = false;
-    log_heap("after audio buffer FAILED");
     return;
   }
-  this->audio_engine_.clear();
-  log_heap("after audio buffer allocation");
 
-  uint8_t header[12];
-  if (!read_exact(client, header, sizeof(header)) || !is_fourcc(header, "RIFF") || !is_fourcc(header + 8, "WAVE")) {
-    ESP_LOGE(HTTP_TAG, "Invalid RIFF/WAVE header");
-    this->publish_event_("HTTP WAV: invalid RIFF/WAVE");
+  uint8_t riff_header[12];
+  if (!read_exact(client, riff_header, sizeof(riff_header)) || !is_fourcc(riff_header, "RIFF") ||
+      !is_fourcc(riff_header + 8, "WAVE")) {
+    ESP_LOGE(HTTP_TAG, "Invalid WAV RIFF/WAVE header");
+    this->publish_event_("HTTP WAV: invalid WAV");
+    this->audio_engine_.stop();
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
     this->engine_test_active_ = false;
-    this->audio_engine_.clear();
     return;
   }
 
@@ -290,152 +341,71 @@ void BtAudioBridge::http_wav_playback_() {
 
   while (!data_found) {
     uint8_t chunk_header[8];
-    if (!read_exact(client, chunk_header, sizeof(chunk_header))) {
-      ESP_LOGE(HTTP_TAG, "Unexpected end of WAV while reading chunk header");
-      this->publish_event_("HTTP WAV: truncated header");
-      esp_http_client_close(client);
-      esp_http_client_cleanup(client);
-      this->engine_test_active_ = false;
-      this->audio_engine_.clear();
-      return;
-    }
-
+    if (!read_exact(client, chunk_header, sizeof(chunk_header))) break;
     const uint32_t chunk_size = le32(chunk_header + 4);
 
     if (is_fourcc(chunk_header, "fmt ")) {
-      if (chunk_size < 16) {
-        ESP_LOGE(HTTP_TAG, "Invalid fmt chunk size=%u", static_cast<unsigned>(chunk_size));
-        this->publish_event_("HTTP WAV: invalid fmt chunk");
-        esp_http_client_close(client);
-        esp_http_client_cleanup(client);
-        this->engine_test_active_ = false;
-        this->audio_engine_.clear();
-        return;
-      }
-
+      if (chunk_size < 16) break;
       uint8_t fmt[16];
-      if (!read_exact(client, fmt, sizeof(fmt))) {
-        this->publish_event_("HTTP WAV: truncated fmt chunk");
-        esp_http_client_close(client);
-        esp_http_client_cleanup(client);
-        this->engine_test_active_ = false;
-        this->audio_engine_.clear();
-        return;
-      }
-
-      audio_format = le16(fmt + 0);
+      if (!read_exact(client, fmt, sizeof(fmt))) break;
+      audio_format = le16(fmt);
       channels = le16(fmt + 2);
       sample_rate = le32(fmt + 4);
       bits_per_sample = le16(fmt + 14);
+      if (chunk_size > 16 && !skip_bytes(client, chunk_size - 16)) break;
       fmt_found = true;
-
-      if (chunk_size > 16 && !skip_bytes(client, chunk_size - 16)) {
-        this->publish_event_("HTTP WAV: bad fmt extension");
-        esp_http_client_close(client);
-        esp_http_client_cleanup(client);
-        this->engine_test_active_ = false;
-        this->audio_engine_.clear();
-        return;
-      }
+      ESP_LOGI(HTTP_TAG, "WAV fmt: format=%u channels=%u rate=%u bits=%u",
+               static_cast<unsigned>(audio_format), static_cast<unsigned>(channels),
+               static_cast<unsigned>(sample_rate), static_cast<unsigned>(bits_per_sample));
     } else if (is_fourcc(chunk_header, "data")) {
       data_size = chunk_size;
       data_found = true;
+      break;
     } else {
-      if (!skip_bytes(client, chunk_size)) {
-        ESP_LOGE(HTTP_TAG, "Failed to skip WAV chunk");
-        this->publish_event_("HTTP WAV: unsupported/truncated chunk");
-        esp_http_client_close(client);
-        esp_http_client_cleanup(client);
-        this->engine_test_active_ = false;
-        this->audio_engine_.clear();
-        return;
-      }
+      if (!skip_bytes(client, chunk_size)) break;
     }
   }
 
-  if (!fmt_found || audio_format != 1 || channels != 2 || sample_rate != 44100 || bits_per_sample != 16) {
-    ESP_LOGE(HTTP_TAG, "Unsupported WAV: format=%u channels=%u rate=%u bits=%u",
-             static_cast<unsigned>(audio_format), static_cast<unsigned>(channels),
-             static_cast<unsigned>(sample_rate), static_cast<unsigned>(bits_per_sample));
-    this->publish_event_("HTTP WAV: need PCM 44.1k/16bit/stereo");
+  if (!fmt_found || !data_found || audio_format != 1 || channels != 2 || sample_rate != 44100 ||
+      bits_per_sample != 16) {
+    ESP_LOGE(HTTP_TAG, "Unsupported WAV format");
+    this->publish_event_("HTTP WAV: unsupported format");
+    this->audio_engine_.stop();
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
     this->engine_test_active_ = false;
-    this->audio_engine_.clear();
     return;
   }
 
-  ESP_LOGI(HTTP_TAG, "WAV accepted: PCM 44.1 kHz / 16 bit / stereo, data=%u bytes", static_cast<unsigned>(data_size));
-  this->publish_event_("HTTP WAV: WAV accepted, pre-filling PCM");
+  ESP_LOGI(HTTP_TAG, "WAV data size=%u", static_cast<unsigned>(data_size));
 
-  uint8_t *pcm = this->http_pcm_buffer_;
+  static uint8_t buffer[2048];
   uint32_t remaining = data_size;
-  constexpr uint8_t PREFILL_PERCENT = 60;
-
-  while (remaining > 0 && this->audio_engine_.fill_percent() < PREFILL_PERCENT) {
-    const size_t wanted = remaining > 1024 ? 1024 : remaining;
-    if (!read_exact(client, pcm, wanted)) {
-      ESP_LOGE(HTTP_TAG, "WAV data ended during prefill");
-      this->publish_event_("HTTP WAV: truncated PCM data");
-      esp_http_client_close(client);
-      esp_http_client_cleanup(client);
-      this->engine_test_active_ = false;
-      this->audio_engine_.clear();
-      return;
-    }
-
-    size_t offset = 0;
-    while (offset < wanted) {
-      const size_t written = this->audio_engine_.write(pcm + offset, wanted - offset);
-      offset += written;
-      if (written == 0) vTaskDelay(pdMS_TO_TICKS(1));
-    }
-    remaining -= static_cast<uint32_t>(wanted);
-  }
-
-  this->engine_test_active_ = true;
-  this->publish_event_("HTTP WAV: PCM playback started");
-
-  while (remaining > 0 && this->engine_test_active_) {
-    if (!this->a2dp_source_.is_active()) {
-      ESP_LOGW(HTTP_TAG, "Bluetooth speaker disconnected during HTTP WAV playback");
-      this->publish_event_("HTTP WAV: speaker disconnected");
+  while (remaining > 0) {
+    const size_t wanted = remaining > sizeof(buffer) ? sizeof(buffer) : remaining;
+    if (!read_exact(client, buffer, wanted)) {
+      ESP_LOGE(HTTP_TAG, "HTTP WAV audio read failed");
       break;
     }
 
-    const size_t wanted = remaining > 1024 ? 1024 : remaining;
-    if (!read_exact(client, pcm, wanted)) {
-      ESP_LOGE(HTTP_TAG, "WAV data ended unexpectedly");
-      this->publish_event_("HTTP WAV: network/data error");
-      break;
+    size_t written = 0;
+    while (written < wanted) {
+      const size_t sent = this->audio_engine_.write(buffer + written, wanted - written);
+      if (sent == 0) {
+        vTaskDelay(pdMS_TO_TICKS(1));
+        continue;
+      }
+      written += sent;
     }
 
-    size_t offset = 0;
-    while (offset < wanted && this->engine_test_active_) {
-      const size_t written = this->audio_engine_.write(pcm + offset, wanted - offset);
-      offset += written;
-      if (written == 0) vTaskDelay(pdMS_TO_TICKS(1));
-    }
     remaining -= static_cast<uint32_t>(wanted);
   }
 
-  const TickType_t drain_start = xTaskGetTickCount();
-  while (this->audio_engine_.available() > 0 &&
-         (xTaskGetTickCount() - drain_start) < pdMS_TO_TICKS(1000) &&
-         this->a2dp_source_.is_active()) {
-    vTaskDelay(pdMS_TO_TICKS(5));
-  }
-
-  this->engine_test_active_ = false;
-  this->audio_engine_.clear();
+  this->audio_engine_.stop();
   esp_http_client_close(client);
   esp_http_client_cleanup(client);
-
-  if (remaining == 0) {
-    this->publish_event_("HTTP WAV: playback finished");
-  } else {
-    this->publish_event_("HTTP WAV: playback stopped");
-  }
+  this->engine_test_active_ = false;
+  this->publish_event_(remaining == 0 ? "HTTP WAV: playback finished" : "HTTP WAV: playback FAILED");
 }
 
 }  // namespace bt_audio_bridge
