@@ -8,6 +8,8 @@
 #include "bt_audio_engine.h"
 
 #include <BluetoothA2DPSource.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 namespace esphome {
 namespace bt_audio_bridge {
@@ -83,6 +85,7 @@ class BtAudioBridge : public Component {
   static int32_t engine_audio_callback_(uint8_t *data, int32_t len);
   static void engine_test_task_(void *arg);
   static void http_wav_task_(void *arg);
+  void http_wav_playback_();
   int32_t generate_test_tone_(uint8_t *data, int32_t len);
   void publish_status_();
   void publish_event_(const char *event);
@@ -115,6 +118,8 @@ class BtAudioBridge : public Component {
   bool auto_connect_pending_{false};
   bool test_tone_active_{false};
   volatile bool engine_test_active_{false};
+  volatile bool http_wav_busy_{false};
+  TaskHandle_t http_wav_task_handle_{nullptr};
   uint32_t auto_connect_started_{0};
   uint32_t test_tone_until_{0};
   uint32_t test_tone_phase_{0};
