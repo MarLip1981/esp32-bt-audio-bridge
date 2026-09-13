@@ -1,6 +1,7 @@
 #pragma once
 
 #include "esphome/components/sensor/sensor.h"
+#include "esphome/components/speaker/speaker.h"
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
@@ -30,7 +31,7 @@ class BtAudioBridgeA2DPSource : public BluetoothA2DPSource {
   BtAudioBridge *owner_;
 };
 
-class BtAudioBridge : public Component {
+class BtAudioBridge : public Component, public speaker::Speaker {
  public:
   static constexpr size_t MAX_DEVICES = 8;
 
@@ -42,6 +43,14 @@ class BtAudioBridge : public Component {
   float get_setup_priority() const override {
     return setup_priority::BLUETOOTH;
   }
+
+  // ESPHome native Speaker interface. Audio data from the HA speaker media
+  // player is written directly into the existing PCM engine ring buffer.
+  size_t play(const uint8_t *data, size_t length) override;
+  void start() override;
+  void stop() override;
+  void finish() override;
+  bool has_buffered_data() const override;
 
   void set_status_sensor(text_sensor::TextSensor *sensor) { this->status_sensor_ = sensor; }
   void set_event_sensor(text_sensor::TextSensor *sensor) { this->event_sensor_ = sensor; }
@@ -115,6 +124,8 @@ class BtAudioBridge : public Component {
   bool auto_connect_pending_{false};
   bool test_tone_active_{false};
   volatile bool engine_test_active_{false};
+  bool speaker_started_{false};
+  bool finish_requested_{false};
   uint32_t auto_connect_started_{0};
   uint32_t test_tone_until_{0};
   uint32_t test_tone_phase_{0};
