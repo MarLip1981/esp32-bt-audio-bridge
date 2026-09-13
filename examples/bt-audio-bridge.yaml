@@ -1,14 +1,3 @@
-# ============================================================================
-# BT AUDIO BRIDGE - PRZYKŁADOWA KONFIGURACJA ESPHOME
-# ============================================================================
-# ESP32 DevKit V1 / ESP32-WROOM-32 - Bluetooth Classic A2DP Source
-#
-# Stan:
-# - Bluetooth / A2DP, skanowanie, wybór i połączenie
-# - zapamiętanie + auto-reconnect + synchronizacja
-# - wyjście audio z Home Assistant przez natywny speaker
-# ============================================================================
-
 esphome:
   name: bt-audio-bridge
   friendly_name: BT audio bridge
@@ -24,6 +13,7 @@ external_components:
     refresh: 1s
 
 logger:
+  level: INFO
 
 api:
   encryption:
@@ -35,10 +25,6 @@ ota:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-  ap:
-    ssid: BT audio bridge
-
-captive_portal:
 
 bt_audio_bridge:
   id: bt_audio_bridge_id
@@ -61,139 +47,39 @@ bt_audio_bridge:
         name: "Bluetooth Device 2"
     - text_sensor:
         name: "Bluetooth Device 3"
-    - text_sensor:
-        name: "Bluetooth Device 4"
-    - text_sensor:
-        name: "Bluetooth Device 5"
-    - text_sensor:
-        name: "Bluetooth Device 6"
-    - text_sensor:
-        name: "Bluetooth Device 7"
-    - text_sensor:
-        name: "Bluetooth Device 8"
-  diagnostics:
-    wifi_rssi:
-      name: "WiFi RSSI"
-    wifi_signal:
-      name: "WiFi Signal"
-    wifi_channel:
-      name: "WiFi Channel"
-    wifi_tx_power:
-      name: "WiFi TX Power"
-    wifi_ssid:
-      name: "WiFi SSID"
-    wifi_phy:
-      name: "WiFi PHY"
-    wifi_status:
-      name: "WiFi Status"
-    wifi_uptime:
-      name: "WiFi Uptime"
-    cpu_load:
-      name: "CPU Load"
-    cpu_frequency:
-      name: "CPU Frequency"
-    heap_free:
-      name: "RAM Free"
-    heap_used:
-      name: "RAM Used"
-    heap_percent:
-      name: "RAM Used Percent"
-    heap_min_free:
-      name: "RAM Minimum Free"
-    heap_largest_block:
-      name: "RAM Largest Block"
-    bt_status:
-      name: "BT Status"
-    bt_controller:
-      name: "BT Controller"
-    bt_connections:
-      name: "BT Connections"
-    bt_reconnects:
-      name: "BT Reconnects"
-    bt_uptime:
-      name: "BT Uptime"
 
 button:
   - platform: template
     name: "Bluetooth Scan"
-    icon: "mdi:bluetooth-audio"
     on_press:
-      - lambda: |-
-          id(bt_audio_bridge_id).start_scan();
+      - lambda: id(bt_audio_bridge_id).start_scan();
 
   - platform: template
     name: "Bluetooth Stop Scan"
-    icon: "mdi:bluetooth-off"
     on_press:
-      - lambda: |-
-          id(bt_audio_bridge_id).stop_scan();
+      - lambda: id(bt_audio_bridge_id).stop_scan();
 
   - platform: template
     name: "Bluetooth Connect 1"
-    icon: "mdi:bluetooth-connect"
     on_press:
-      - lambda: |-
-          id(bt_audio_bridge_id).connect_slot(0);
+      - lambda: id(bt_audio_bridge_id).connect_slot(0);
 
   - platform: template
     name: "Bluetooth Connect 2"
-    icon: "mdi:bluetooth-connect"
     on_press:
-      - lambda: |-
-          id(bt_audio_bridge_id).connect_slot(1);
+      - lambda: id(bt_audio_bridge_id).connect_slot(1);
 
   - platform: template
     name: "Bluetooth Connect 3"
-    icon: "mdi:bluetooth-connect"
     on_press:
-      - lambda: |-
-          id(bt_audio_bridge_id).connect_slot(2);
-
-  - platform: template
-    name: "Bluetooth Connect 4"
-    icon: "mdi:bluetooth-connect"
-    on_press:
-      - lambda: |-
-          id(bt_audio_bridge_id).connect_slot(3);
-
-  - platform: template
-    name: "Bluetooth Connect 5"
-    icon: "mdi:bluetooth-connect"
-    on_press:
-      - lambda: |-
-          id(bt_audio_bridge_id).connect_slot(4);
-
-  - platform: template
-    name: "Bluetooth Connect 6"
-    icon: "mdi:bluetooth-connect"
-    on_press:
-      - lambda: |-
-          id(bt_audio_bridge_id).connect_slot(5);
-
-  - platform: template
-    name: "Bluetooth Connect 7"
-    icon: "mdi:bluetooth-connect"
-    on_press:
-      - lambda: |-
-          id(bt_audio_bridge_id).connect_slot(6);
-
-  - platform: template
-    name: "Bluetooth Connect 8"
-    icon: "mdi:bluetooth-connect"
-    on_press:
-      - lambda: |-
-          id(bt_audio_bridge_id).connect_slot(7);
+      - lambda: id(bt_audio_bridge_id).connect_slot(2);
 
   - platform: template
     name: "Bluetooth Disconnect"
-    icon: "mdi:bluetooth-off"
     on_press:
-      - lambda: |-
-          id(bt_audio_bridge_id).disconnect();
+      - lambda: id(bt_audio_bridge_id).disconnect();
 
   - platform: template
     name: "Bluetooth Forget"
-    icon: "mdi:bluetooth-settings"
     on_press:
-      - lambda: |-
-          id(bt_audio_bridge_id).forget_speaker();
+      - lambda: id(bt_audio_bridge_id).forget_speaker();
