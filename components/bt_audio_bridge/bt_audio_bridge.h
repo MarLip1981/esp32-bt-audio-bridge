@@ -17,7 +17,13 @@ extern BtAudioBridge *global_bt_audio_bridge;
 
 class BtAudioBridgeA2DPSource : public BluetoothA2DPSource {
  public:
-  explicit BtAudioBridgeA2DPSource(BtAudioBridge *owner) : owner_(owner) {}
+  explicit BtAudioBridgeA2DPSource(BtAudioBridge *owner) : owner_(owner) {
+    // The ESP32 is very tight on internal heap once Wi-Fi + Classic BT + A2DP
+    // are active. Keep the A2DP event task lean; the library defaults are 3 KiB
+    // stack and a 20-entry queue.
+    this->set_event_stack_size(2048);
+    this->set_event_queue_size(10);
+  }
 
  protected:
   void app_gap_callback(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param) override;
