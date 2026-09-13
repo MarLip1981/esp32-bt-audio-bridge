@@ -513,7 +513,6 @@ const char *BtAudioBridge::reset_reason_() {
     case ESP_RST_EXT: return "EXTERNAL";
     case ESP_RST_SW: return "SOFTWARE";
     case ESP_RST_PANIC: return "PANIC";
-    case ESP_RST_PANIC: return "PANIC";
     case ESP_RST_INT_WDT: return "INT_WDT";
     case ESP_RST_TASK_WDT: return "TASK_WDT";
     case ESP_RST_WDT: return "WDT";
