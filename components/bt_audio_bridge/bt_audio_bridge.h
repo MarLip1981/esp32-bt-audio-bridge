@@ -5,6 +5,7 @@
 #include "esphome/components/speaker/speaker.h"
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
+#include "esphome/core/log.h"
 
 #include "bt_audio_engine.h"
 
@@ -43,7 +44,6 @@ class BtAudioBridge : public Component, public speaker::Speaker {
     return setup_priority::AFTER_WIFI;
   }
 
-  // ESPHome Speaker interface used by the native speaker media_player.
   size_t play(const uint8_t *data, size_t length) override {
     if (!this->a2dp_started_ || !this->a2dp_source_.is_active()) return 0;
     if (this->state_ == speaker::STATE_STOPPED) this->start();
@@ -78,8 +78,6 @@ class BtAudioBridge : public Component, public speaker::Speaker {
   }
 
   void finish() override {
-    // Keep the PCM ring alive while A2DP drains its final frames. The
-    // SpeakerMediaPlayer uses has_buffered_data() to wait for completion.
     this->media_finish_pending_ = true;
     this->state_ = speaker::STATE_STOPPED;
   }
@@ -88,21 +86,10 @@ class BtAudioBridge : public Component, public speaker::Speaker {
     return this->audio_engine_.available() > 0;
   }
 
-  void set_volume(float volume) override {
-    this->volume_ = volume;
-  }
-
-  float get_volume() override {
-    return this->volume_;
-  }
-
-  void set_mute_state(bool mute_state) override {
-    this->mute_state_ = mute_state;
-  }
-
-  bool get_mute_state() override {
-    return this->mute_state_;
-  }
+  void set_volume(float volume) override { this->volume_ = volume; }
+  float get_volume() override { return this->volume_; }
+  void set_mute_state(bool mute_state) override { this->mute_state_ = mute_state; }
+  bool get_mute_state() override { return this->mute_state_; }
 
   void set_status_sensor(text_sensor::TextSensor *sensor) { this->status_sensor_ = sensor; }
   void set_event_sensor(text_sensor::TextSensor *sensor) { this->event_sensor_ = sensor; }
