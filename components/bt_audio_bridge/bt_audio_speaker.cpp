@@ -31,17 +31,17 @@ void BtAudioBridge::stop() {
   this->finish_requested_ = false;
   this->speaker_started_ = false;
   this->audio_engine_.clear();
+  this->audio_engine_.end();
   this->state_ = speaker::STATE_STOPPED;
 }
 
 void BtAudioBridge::finish() {
   if (!this->speaker_started_) {
     this->state_ = speaker::STATE_STOPPED;
+    this->audio_engine_.end();
     return;
   }
 
-  // Do not discard the PCM buffer. The A2DP callback must drain the remaining
-  // audio before the speaker transitions to STOPPED.
   this->finish_requested_ = true;
   this->state_ = speaker::STATE_STOPPING;
 }
@@ -66,6 +66,8 @@ bool BtAudioBridge::has_buffered_data() const {
     self->engine_test_active_ = false;
     self->speaker_started_ = false;
     self->finish_requested_ = false;
+    self->audio_engine_.clear();
+    self->audio_engine_.end();
     self->state_ = speaker::STATE_STOPPED;
   }
 
