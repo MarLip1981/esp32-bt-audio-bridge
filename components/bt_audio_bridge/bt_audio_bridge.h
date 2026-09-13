@@ -2,6 +2,7 @@
 
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/text_sensor/text_sensor.h"
+#include "esphome/components/speaker/speaker.h"
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
 
@@ -29,7 +30,7 @@ class BtAudioBridgeA2DPSource : public BluetoothA2DPSource {
   BtAudioBridge *owner_;
 };
 
-class BtAudioBridge : public Component {
+class BtAudioBridge : public Component, public speaker::Speaker {
  public:
   static constexpr size_t MAX_DEVICES = 8;
 
@@ -40,6 +41,67 @@ class BtAudioBridge : public Component {
 
   float get_setup_priority() const override {
     return setup_priority::AFTER_WIFI;
+  }
+
+  // ESPHome Speaker interface used by the native speaker media_player.
+  size_t play(const uint8_t *data, size_t length) override {
+    if (!this->a2dp_started_ || !this->a2dp_source_.is_active()) return 0;
+    if (this->state_ == speaker::STATE_STOPPED) this->start();
+    if (this->state_ != speaker::STATE_RUNNING) return 0;
+    this->engine_test_active_ = true;
+    this->media_finish_pending_ = false;
+    return this->audio_engine_.write(data, length);
+  }
+
+  void start() override {
+    if (!this->a2dp_started_ || !this->a2dp_source_.is_active()) {
+      this->state_ = speaker::STATE_STOPPED;
+      return;
+    }
+    if (!this->audio_engine_.begin()) {
+      ESP_LOGE("bt_audio_bridge", "Audio engine allocation failed");
+      this->state_ = speaker::STATE_STOPPED;
+      return;
+    }
+    this->audio_engine_.clear();
+    this->engine_test_active_ = true;
+    this->media_finish_pending_ = false;
+    this->state_ = speaker::STATE_RUNNING;
+  }
+
+  void stop() override {
+    this->media_finish_pending_ = false;
+    this->engine_test_active_ = false;
+    this->audio_engine_.clear();
+    this->audio_engine_.end();
+    this->state_ = speaker::STATE_STOPPED;
+  }
+
+  void finish() override {
+    // Keep the PCM ring alive while A2DP drains its final frames. The
+    // SpeakerMediaPlayer uses has_buffered_data() to wait for completion.
+    this->media_finish_pending_ = true;
+    this->state_ = speaker::STATE_STOPPED;
+  }
+
+  bool has_buffered_data() const override {
+    return this->audio_engine_.available() > 0;
+  }
+
+  void set_volume(float volume) override {
+    this->volume_ = volume;
+  }
+
+  float get_volume() override {
+    return this->volume_;
+  }
+
+  void set_mute_state(bool mute_state) override {
+    this->mute_state_ = mute_state;
+  }
+
+  bool get_mute_state() override {
+    return this->mute_state_;
   }
 
   void set_status_sensor(text_sensor::TextSensor *sensor) { this->status_sensor_ = sensor; }
@@ -119,6 +181,7 @@ class BtAudioBridge : public Component {
   bool test_tone_active_{false};
   volatile bool engine_test_active_{false};
   volatile bool http_wav_busy_{false};
+  bool media_finish_pending_{false};
   TaskHandle_t http_wav_task_handle_{nullptr};
   uint32_t auto_connect_started_{0};
   uint32_t test_tone_until_{0};
