@@ -30,6 +30,9 @@ extern "C" bool __wrap_btStartMode(bt_mode mode) {
   esp_bt_controller_config_t cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
   cfg.mode = esp_mode;
   if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE) {
+    if (esp_mode == ESP_BT_MODE_CLASSIC_BT) {
+      btMemRelease(BT_MODE_BLE);
+    }
     esp_err_t err = esp_bt_controller_init(&cfg);
     if (err != ESP_OK) {
       ESP_LOGE("bt_audio_bridge", "BT controller init failed: %s", esp_err_to_name(err));
