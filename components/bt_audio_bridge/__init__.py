@@ -3,7 +3,7 @@ from pathlib import Path
 import esphome.codegen as cg
 import esphome.config_validation as cv
 
-from esphome.components import sensor, text_sensor
+from esphome.components import sensor, speaker, text_sensor
 from esphome.const import CONF_ID
 
 from esphome.components.esp32 import (
@@ -42,7 +42,7 @@ CONF_BT_CONNECTIONS = "bt_connections"
 CONF_BT_RECONNECTS = "bt_reconnects"
 CONF_BT_UPTIME = "bt_uptime"
 
-AUTO_LOAD = ["sensor", "text_sensor"]
+AUTO_LOAD = ["sensor", "text_sensor", "speaker"]
 DEPENDENCIES = ["wifi"]
 
 bt_audio_bridge_ns = cg.esphome_ns.namespace("bt_audio_bridge")
@@ -50,6 +50,7 @@ bt_audio_bridge_ns = cg.esphome_ns.namespace("bt_audio_bridge")
 BtAudioBridge = bt_audio_bridge_ns.class_(
     "BtAudioBridge",
     cg.Component,
+    speaker.Speaker,
 )
 
 BtAudioBridgeDiagnostics = bt_audio_bridge_ns.class_(
@@ -85,7 +86,7 @@ DIAGNOSTICS_SCHEMA = cv.Schema({
     cv.Optional(CONF_BT_UPTIME): sensor.sensor_schema(unit_of_measurement="s", accuracy_decimals=0),
 })
 
-CONFIG_SCHEMA = cv.Schema({
+CONFIG_SCHEMA = speaker.SPEAKER_SCHEMA.extend({
     cv.GenerateID(): cv.declare_id(BtAudioBridge),
     cv.Optional(CONF_STATUS): text_sensor.text_sensor_schema(),
     cv.Optional(CONF_EVENT): text_sensor.text_sensor_schema(),
@@ -126,8 +127,6 @@ async def to_code(config):
     add_idf_sdkconfig_option("CONFIG_BT_BLE_ENABLED", False)
     add_idf_sdkconfig_option("CONFIG_BT_CLASSIC_ENABLE_POWER_CTRL_VSC", True)
 
-    # Enable low-overhead FreeRTOS runtime statistics so the diagnostics
-    # component can report CPU load from idle-task runtime.
     add_idf_sdkconfig_option("CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS", True)
     add_idf_sdkconfig_option("CONFIG_FREERTOS_USE_STATS_FORMATTING_FUNCTIONS", True)
     add_idf_sdkconfig_option("CONFIG_FREERTOS_USE_TRACE_FACILITY", True)
@@ -144,6 +143,7 @@ async def to_code(config):
 
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
+    await speaker.register_speaker(var, config)
 
     if status_config := config.get(CONF_STATUS):
         status_sensor = await text_sensor.new_text_sensor(status_config)
