@@ -30,9 +30,7 @@ extern "C" bool __wrap_btStartMode(bt_mode mode) {
   esp_bt_controller_config_t cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
   cfg.mode = esp_mode;
   if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE) {
-    if (esp_mode == ESP_BT_MODE_CLASSIC_BT) {
-      btMemRelease(BT_MODE_BLE);
-    }
+    if (esp_mode == ESP_BT_MODE_CLASSIC_BT) btMemRelease(BT_MODE_BLE);
     esp_err_t err = esp_bt_controller_init(&cfg);
     if (err != ESP_OK) {
       ESP_LOGE("bt_audio_bridge", "BT controller init failed: %s", esp_err_to_name(err));
@@ -186,7 +184,11 @@ void BtAudioBridge::sync_current_speaker_() {
   }
   char state[120];
   std::snprintf(state, sizeof(state), "%s | %s", this->selected_name_[0] != '\0' ? this->selected_name_ : "UNKNOWN", this->selected_mac_);
-  if (this->device_sensor_ != nullptr) this->device_sensor_->publish_state(state);
+  if (this->device_sensor_ != nullptr && std::strncmp(this->last_published_device_, state, sizeof(this->last_published_device_)) != 0) {
+    this->device_sensor_->publish_state(state);
+    std::strncpy(this->last_published_device_, state, sizeof(this->last_published_device_) - 1);
+    this->last_published_device_[sizeof(this->last_published_device_) - 1] = '\0';
+  }
   if (changed) this->save_speaker_();
 }
 
@@ -204,6 +206,7 @@ void BtAudioBridge::on_battery_status(esp_avrc_batt_stat_t status) {
     case ESP_AVRC_BATT_FULL_CHARGE: text = "FULL"; break;
     default: break;
   }
+  if (std::strncmp(this->battery_status_, text, sizeof(this->battery_status_)) == 0) return;
   std::strncpy(this->battery_status_, text, sizeof(this->battery_status_) - 1);
   this->battery_status_[sizeof(this->battery_status_) - 1] = '\0';
   if (this->battery_sensor_ != nullptr) this->battery_sensor_->publish_state(this->battery_status_);
@@ -220,15 +223,16 @@ int32_t BtAudioBridge::generate_test_tone_(uint8_t *data, int32_t len) {
     std::memset(data, 0, static_cast<size_t>(len));
     return len;
   }
-  constexpr double sr = 44100.0;
-  constexpr double freq = 880.0;
-  constexpr double pi2 = 6.28318530717958647692;
+  constexpr float sr = 44100.0f;
+  constexpr float freq = 880.0f;
+  constexpr float pi2 = 6.28318530717958647692f;
+  constexpr float amplitude = 0.12f;
   constexpr int bps = 4;
   const int samples = len / bps;
   auto *out = reinterpret_cast<int16_t *>(data);
   for (int i = 0; i < samples; i++) {
-    const double v = std::sin(pi2 * freq * static_cast<double>(this->test_tone_phase_) / sr) * 0.12;
-    const int16_t value = static_cast<int16_t>(v * 32767.0);
+    const float v = std::sinf(pi2 * freq * static_cast<float>(this->test_tone_phase_) / sr) * amplitude;
+    const int16_t value = static_cast<int16_t>(v * 32767.0f);
     out[i * 2] = value;
     out[i * 2 + 1] = value;
     this->test_tone_phase_++;
@@ -279,6 +283,8 @@ void BtAudioBridge::setup() {
   this->last_rssi_request_ = 0;
   this->test_tone_active_ = false;
   this->engine_test_active_ = false;
+  this->last_published_status_[0] = '\0';
+  this->last_published_device_[0] = '\0';
   std::strncpy(this->status_, this->auto_connect_pending_ ? "CONNECTING" : "READY", sizeof(this->status_) - 1);
   if (this->battery_sensor_ != nullptr) this->battery_sensor_->publish_state("UNKNOWN");
   this->publish_status_();
@@ -288,13 +294,11 @@ void BtAudioBridge::setup() {
     char state[120];
     std::snprintf(state, sizeof(state), "%s | %s", this->selected_name_[0] != '\0' ? this->selected_name_ : "UNKNOWN", this->selected_mac_[0] != '\0' ? this->selected_mac_ : "NONE");
     this->device_sensor_->publish_state(state);
+    std::strncpy(this->last_published_device_, state, sizeof(this->last_published_device_) - 1);
+    this->last_published_device_[sizeof(this->last_published_device_) - 1] = '\0';
   }
   for (size_t i = 0; i < this->device_slot_count_; i++) this->publish_device_(i);
 
-  // With a saved speaker, start Classic BT/A2DP immediately during the
-  // Bluetooth-priority setup phase, before Wi-Fi initialization can fragment
-  // the internal heap. The actual connection request remains in loop() so
-  // the stack has time to finish initialization cleanly.
   if (this->auto_connect_pending_) {
     this->start_a2dp_();
     if (this->a2dp_started_) {
@@ -461,6 +465,7 @@ void BtAudioBridge::forget_speaker() {
   }
   this->selected_name_[0] = '\0';
   this->selected_mac_[0] = '\0';
+  this->last_published_device_[0] = '\0';
   this->connected_ = false;
   this->scanning_ = false;
   this->test_tone_active_ = false;
@@ -491,16 +496,23 @@ void BtAudioBridge::start_a2dp_() {
 }
 
 void BtAudioBridge::publish_status_() {
-  if (this->status_sensor_ != nullptr) this->status_sensor_->publish_state(this->status_);
+  if (this->status_sensor_ == nullptr) return;
+  if (std::strncmp(this->last_published_status_, this->status_, sizeof(this->last_published_status_)) == 0) return;
+  this->status_sensor_->publish_state(this->status_);
+  std::strncpy(this->last_published_status_, this->status_, sizeof(this->last_published_status_) - 1);
+  this->last_published_status_[sizeof(this->last_published_status_) - 1] = '\0';
 }
+
 void BtAudioBridge::publish_event_(const char *event) {
   if (this->event_sensor_ != nullptr && event != nullptr) this->event_sensor_->publish_state(event);
 }
+
 const char *BtAudioBridge::reset_reason_() {
   switch (esp_reset_reason()) {
     case ESP_RST_POWERON: return "POWERON";
     case ESP_RST_EXT: return "EXTERNAL";
     case ESP_RST_SW: return "SOFTWARE";
+    case ESP_RST_PANIC: return "PANIC";
     case ESP_RST_PANIC: return "PANIC";
     case ESP_RST_INT_WDT: return "INT_WDT";
     case ESP_RST_TASK_WDT: return "TASK_WDT";
