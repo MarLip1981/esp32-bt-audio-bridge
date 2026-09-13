@@ -510,3 +510,6 @@ const char *BtAudioBridge::reset_reason_() {
     default: return "OTHER";
   }
 }
+
+}  // namespace bt_audio_bridge
+}  // namespace esphome
