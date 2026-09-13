@@ -39,7 +39,7 @@ void BtAudioBridge::start_engine_test() {
       "bt_audio_engine",
       4096,
       this,
-      1,
+      3,
       nullptr);
 
   if (result != pdPASS) {
@@ -65,6 +65,27 @@ void BtAudioBridge::engine_test_task_(void *arg) {
   const TickType_t start = xTaskGetTickCount();
   const TickType_t duration = pdMS_TO_TICKS(test_duration_ms);
 
+  // Prime the ring buffer before allowing the A2DP callback to consume it.
+  // With only a 4 KiB buffer, starting from empty makes the first callbacks
+  // underrun immediately and produces the audible clicks/crackling seen in
+  // the original diagnostic test.
+  constexpr size_t prefill_chunks = 2;
+  for (size_t chunk = 0; chunk < prefill_chunks && self->engine_test_active_; chunk++) {
+    auto *out = reinterpret_cast<int16_t *>(pcm);
+    constexpr size_t samples = chunk_bytes / 4U;
+
+    for (size_t i = 0; i < samples; i++) {
+      const double sample = std::sin(two_pi * frequency * static_cast<double>(phase) / sample_rate) * 0.18;
+      const int16_t value = static_cast<int16_t>(sample * 32767.0);
+      out[i * 2U] = value;
+      out[i * 2U + 1U] = value;
+      phase++;
+    }
+    self->audio_engine_.write(pcm, sizeof(pcm));
+  }
+
+  TickType_t next_write = xTaskGetTickCount();
+
   while (self->engine_test_active_ && (xTaskGetTickCount() - start) < duration) {
     auto *out = reinterpret_cast<int16_t *>(pcm);
     constexpr size_t samples = chunk_bytes / 4U;
@@ -77,8 +98,16 @@ void BtAudioBridge::engine_test_task_(void *arg) {
       phase++;
     }
 
+    // Keep the producer locked to the 10 ms audio clock instead of accumulating
+    // scheduler drift with repeated vTaskDelay(). If the buffer is temporarily
+    // full, write() remains non-blocking and the next cycle catches up.
     self->audio_engine_.write(pcm, sizeof(pcm));
-    vTaskDelay(pdMS_TO_TICKS(chunk_ms));
+    next_write += pdMS_TO_TICKS(chunk_ms);
+    const TickType_t now = xTaskGetTickCount();
+    if (static_cast<int32_t>(next_write - now) > 0)
+      vTaskDelay(next_write - now);
+    else
+      taskYIELD();
   }
 
   self->engine_test_active_ = false;
