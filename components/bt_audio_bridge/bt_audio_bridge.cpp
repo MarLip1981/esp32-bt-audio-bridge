@@ -2,7 +2,6 @@
 
 #include "esphome/core/log.h"
 
-#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -213,61 +212,19 @@ void BtAudioBridge::on_battery_status(esp_avrc_batt_stat_t status) {
   if (this->battery_sensor_ != nullptr) this->battery_sensor_->publish_state(this->battery_status_);
 }
 
-int32_t BtAudioBridge::test_tone_callback_(uint8_t *data, int32_t len) {
+int32_t BtAudioBridge::engine_audio_callback_(uint8_t *data, int32_t len) {
   if (global_bt_audio_bridge == nullptr) { std::memset(data, 0, len); return len; }
-  return global_bt_audio_bridge->generate_test_tone_(data, len);
-}
-
-int32_t BtAudioBridge::generate_test_tone_(uint8_t *data, int32_t len) {
-  if (!this->test_tone_active_ || millis() >= this->test_tone_until_) {
-    this->test_tone_active_ = false;
+  if (!global_bt_audio_bridge->engine_test_active_) {
     std::memset(data, 0, static_cast<size_t>(len));
     return len;
   }
-  constexpr float sr = 44100.0f;
-  constexpr float freq = 880.0f;
-  constexpr float pi2 = 6.28318530717958647692f;
-  constexpr float amplitude = 0.12f;
-  constexpr int bps = 4;
-  const int samples = len / bps;
-  auto *out = reinterpret_cast<int16_t *>(data);
-  for (int i = 0; i < samples; i++) {
-    const float v = std::sinf(pi2 * freq * static_cast<float>(this->test_tone_phase_) / sr) * amplitude;
-    const int16_t value = static_cast<int16_t>(v * 32767.0f);
-    out[i * 2] = value;
-    out[i * 2 + 1] = value;
-    this->test_tone_phase_++;
+  const size_t requested = static_cast<size_t>(len);
+  const size_t received = global_bt_audio_bridge->audio_engine_.read(data, requested);
+  if (received > 0 && global_bt_audio_bridge->speaker_started_) {
+    const uint32_t frames = global_bt_audio_bridge->get_audio_stream_info().bytes_to_frames(received);
+    global_bt_audio_bridge->audio_output_callback_(frames, esp_timer_get_time());
   }
-  const int used = samples * bps;
-  if (used < len) std::memset(data + used, 0, static_cast<size_t>(len - used));
-  return len;
-}
-
-int32_t BtAudioBridge::engine_audio_callback_(uint8_t *data, int32_t len) {
-  if (global_bt_audio_bridge == nullptr) { std::memset(data, 0, len); return len; }
-  if (global_bt_audio_bridge->engine_test_active_) {
-    const size_t requested = static_cast<size_t>(len);
-    const size_t received = global_bt_audio_bridge->audio_engine_.read(data, requested);
-    if (received > 0 && global_bt_audio_bridge->speaker_started_) {
-      const uint32_t frames = global_bt_audio_bridge->get_audio_stream_info().bytes_to_frames(received);
-      global_bt_audio_bridge->audio_output_callback_(frames, esp_timer_get_time());
-    }
-    return static_cast<int32_t>(received);
-  }
-  return global_bt_audio_bridge->generate_test_tone_(data, len);
-}
-
-void BtAudioBridge::start_test_tone() {
-  if (!this->a2dp_started_ || !this->a2dp_source_.is_active()) return;
-  this->test_tone_phase_ = 0;
-  this->test_tone_until_ = millis() + 700;
-  this->test_tone_active_ = true;
-  this->publish_event_("AUDIO: connection confirmation tone");
-}
-
-void BtAudioBridge::stop_test_tone() {
-  this->test_tone_active_ = false;
-  this->test_tone_until_ = 0;
+  return static_cast<int32_t>(received);
 }
 
 void BtAudioBridge::setup() {
@@ -289,8 +246,9 @@ void BtAudioBridge::setup() {
   this->devices_dirty_ = false;
   this->last_status_check_ = millis();
   this->last_rssi_request_ = 0;
-  this->test_tone_active_ = false;
   this->engine_test_active_ = false;
+  this->speaker_started_ = false;
+  this->finish_requested_ = false;
   this->last_published_status_[0] = '\0';
   this->last_published_device_[0] = '\0';
   std::strncpy(this->status_, this->auto_connect_pending_ ? "CONNECTING" : "READY", sizeof(this->status_) - 1);
@@ -362,7 +320,6 @@ void BtAudioBridge::loop() {
   if (active) {
     if (!this->connected_) {
       this->publish_event_("BT: speaker connected");
-      this->start_test_tone();
       this->last_rssi_request_ = 0;
     }
     this->connected_ = true;
@@ -375,7 +332,7 @@ void BtAudioBridge::loop() {
       this->last_rssi_request_ = now;
     }
   } else {
-    this->test_tone_active_ = false;
+    this->engine_test_active_ = false;
     if (this->connected_) this->publish_event_("BT: speaker disconnected");
     this->connected_ = false;
     if (this->a2dp_source_.is_discovery_active()) {
@@ -421,69 +378,9 @@ void BtAudioBridge::stop_scan() {
   if (this->a2dp_started_) { this->a2dp_source_.end(); this->a2dp_started_ = false; }
   this->connected_ = false;
   this->scanning_ = false;
-  this->test_tone_active_ = false;
+  this->engine_test_active_ = false;
   std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
   this->publish_status_();
-}
-
-void BtAudioBridge::connect_slot(size_t index) {
-  if (index >= this->device_count_ || !this->devices_[index].used) return;
-  std::strncpy(this->selected_name_, this->devices_[index].name, sizeof(this->selected_name_) - 1);
-  this->selected_name_[sizeof(this->selected_name_) - 1] = '\0';
-  this->connect_to(this->devices_[index].mac);
-}
-
-void BtAudioBridge::connect_to(const char *mac) {
-  if (mac == nullptr || std::strlen(mac) == 0) return;
-  unsigned int b[6];
-  if (std::sscanf(mac, "%02x:%02x:%02x:%02x:%02x:%02x", &b[0], &b[1], &b[2], &b[3], &b[4], &b[5]) != 6) return;
-  esp_bd_addr_t address = {static_cast<uint8_t>(b[0]), static_cast<uint8_t>(b[1]), static_cast<uint8_t>(b[2]), static_cast<uint8_t>(b[3]), static_cast<uint8_t>(b[4]), static_cast<uint8_t>(b[5])};
-  this->auto_connect_pending_ = false;
-  std::strncpy(this->selected_mac_, mac, sizeof(this->selected_mac_) - 1);
-  this->selected_mac_[sizeof(this->selected_mac_) - 1] = '\0';
-  std::strncpy(this->status_, "CONNECTING", sizeof(this->status_) - 1);
-  this->publish_status_();
-  this->save_speaker_();
-  if (!this->a2dp_started_) { this->scan_requested_ = false; this->start_a2dp_(); }
-  else if (this->a2dp_source_.is_discovery_active()) this->a2dp_source_.cancel_discovery();
-  this->a2dp_source_.connect_to(address);
-}
-
-void BtAudioBridge::disconnect() {
-  this->auto_connect_pending_ = false;
-  this->scan_requested_ = false;
-  if (this->a2dp_started_) { this->a2dp_source_.end(); this->a2dp_started_ = false; }
-  this->connected_ = false;
-  this->scanning_ = false;
-  this->test_tone_active_ = false;
-  std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
-  this->publish_status_();
-}
-
-void BtAudioBridge::forget_speaker() {
-  this->auto_connect_pending_ = false;
-  this->scan_requested_ = false;
-  if (this->a2dp_started_) { this->a2dp_source_.end(); this->a2dp_started_ = false; }
-  this->a2dp_source_.clean_last_connection();
-  nvs_handle_t handle;
-  if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
-    nvs_erase_key(handle, NVS_NAME_KEY);
-    nvs_erase_key(handle, NVS_MAC_KEY);
-    nvs_commit(handle);
-    nvs_close(handle);
-  }
-  this->selected_name_[0] = '\0';
-  this->selected_mac_[0] = '\0';
-  this->last_published_device_[0] = '\0';
-  this->connected_ = false;
-  this->scanning_ = false;
-  this->test_tone_active_ = false;
-  if (this->device_sensor_ != nullptr) this->device_sensor_->publish_state("NONE");
-  if (this->rssi_sensor_ != nullptr) this->rssi_sensor_->publish_state(NAN);
-  if (this->battery_sensor_ != nullptr) this->battery_sensor_->publish_state("UNKNOWN");
-  std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
-  this->publish_status_();
-  this->publish_event_("BT: saved speaker forgotten");
 }
 
 bool BtAudioBridge::is_connected() { return this->connected_; }
