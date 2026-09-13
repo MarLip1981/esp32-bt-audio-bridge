@@ -18,9 +18,6 @@ extern BtAudioBridge *global_bt_audio_bridge;
 class BtAudioBridgeA2DPSource : public BluetoothA2DPSource {
  public:
   explicit BtAudioBridgeA2DPSource(BtAudioBridge *owner) : owner_(owner) {
-    // The ESP32 is very tight on internal heap once Wi-Fi + Classic BT + A2DP
-    // are active. Keep the A2DP event task lean; the library defaults are 3 KiB
-    // stack and a 20-entry queue.
     this->set_event_stack_size(2048);
     this->set_event_queue_size(10);
   }
@@ -42,9 +39,6 @@ class BtAudioBridge : public Component {
   void loop() override;
   void dump_config() override;
 
-  // Classic Bluetooth/A2DP must initialize before Wi-Fi so the BT stack gets
-  // the largest possible contiguous internal-heap regions. The ESPHome
-  // Bluetooth priority is intentionally used instead of AFTER_WIFI.
   float get_setup_priority() const override {
     return setup_priority::BLUETOOTH;
   }
@@ -129,6 +123,8 @@ class BtAudioBridge : public Component {
   char selected_name_[64]{};
   char status_[32]{"STARTING"};
   char battery_status_[24]{"UNKNOWN"};
+  char last_published_status_[32]{};
+  char last_published_device_[120]{};
 
   int scan_cycles_{0};
   unsigned long last_status_check_{0};
