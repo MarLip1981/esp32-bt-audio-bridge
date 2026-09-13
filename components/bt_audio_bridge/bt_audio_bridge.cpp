@@ -7,6 +7,7 @@
 #include <cstring>
 
 #include <esp_system.h>
+#include <esp_timer.h>
 #include <nvs.h>
 #include <nvs_flash.h>
 
@@ -244,8 +245,15 @@ int32_t BtAudioBridge::generate_test_tone_(uint8_t *data, int32_t len) {
 
 int32_t BtAudioBridge::engine_audio_callback_(uint8_t *data, int32_t len) {
   if (global_bt_audio_bridge == nullptr) { std::memset(data, 0, len); return len; }
-  if (global_bt_audio_bridge->engine_test_active_)
-    return static_cast<int32_t>(global_bt_audio_bridge->audio_engine_.read(data, static_cast<size_t>(len)));
+  if (global_bt_audio_bridge->engine_test_active_) {
+    const size_t requested = static_cast<size_t>(len);
+    const size_t received = global_bt_audio_bridge->audio_engine_.read(data, requested);
+    if (received > 0 && global_bt_audio_bridge->speaker_started_) {
+      const uint32_t frames = global_bt_audio_bridge->get_audio_stream_info().bytes_to_frames(received);
+      global_bt_audio_bridge->audio_output_callback_(frames, esp_timer_get_time());
+    }
+    return static_cast<int32_t>(received);
+  }
   return global_bt_audio_bridge->generate_test_tone_(data, len);
 }
 
@@ -387,6 +395,7 @@ void BtAudioBridge::dump_config() {
   ESP_LOGCONFIG(TAG, "  Auto reconnect: enabled");
   ESP_LOGCONFIG(TAG, "  Startup saved-speaker reconnect: enabled");
   ESP_LOGCONFIG(TAG, "  Audio engine callback: permanent");
+  ESP_LOGCONFIG(TAG, "  HA speaker output: enabled");
   ESP_LOGCONFIG(TAG, "  HA scan slots: %u", static_cast<unsigned>(this->device_slot_count_));
 }
 
