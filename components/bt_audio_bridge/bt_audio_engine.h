@@ -11,8 +11,9 @@ namespace bt_audio_bridge {
 
 class BtAudioEngine {
  public:
-  // 24 KiB of raw PCM = about 136 ms at 44.1 kHz / 16-bit / stereo.
-  static constexpr size_t BUFFER_SIZE = 24 * 1024;
+  // Keep the PCM buffer small so the Classic BT stack can obtain its contiguous
+  // A2DP TX buffers (~4 KiB) on the ESP32. This is ~23 ms at 44.1 kHz/stereo.
+  static constexpr size_t BUFFER_SIZE = 4 * 1024;
   static constexpr size_t TRIGGER_LEVEL = 1;
 
   bool begin();
