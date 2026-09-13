@@ -68,6 +68,12 @@ class BtAudioBridge : public Component, public speaker::Speaker {
   void connect_slot(size_t index);
   void disconnect();
   void forget_speaker();
+
+  // Kept as no-op compatibility shims for old YAML buttons.
+  void start_test_tone() {}
+  void stop_test_tone() {}
+  void start_engine_test() {}
+
   void on_discovery_stopped();
   void on_device_found(const char *name, const char *mac, int rssi);
   void on_real_rssi(int rssi);
@@ -114,7 +120,7 @@ class BtAudioBridge : public Component, public speaker::Speaker {
   bool a2dp_started_{false};
   bool scan_requested_{false};
   bool auto_connect_pending_{false};
-  bool speaker_audio_active_{false};
+  bool engine_test_active_{false};
   bool speaker_started_{false};
   bool finish_requested_{false};
   uint32_t auto_connect_started_{0};
