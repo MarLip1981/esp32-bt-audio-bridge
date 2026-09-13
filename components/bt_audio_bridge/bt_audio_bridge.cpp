@@ -290,6 +290,18 @@ void BtAudioBridge::setup() {
     this->device_sensor_->publish_state(state);
   }
   for (size_t i = 0; i < this->device_slot_count_; i++) this->publish_device_(i);
+
+  // With a saved speaker, start Classic BT/A2DP immediately during the
+  // Bluetooth-priority setup phase, before Wi-Fi initialization can fragment
+  // the internal heap. The actual connection request remains in loop() so
+  // the stack has time to finish initialization cleanly.
+  if (this->auto_connect_pending_) {
+    this->start_a2dp_();
+    if (this->a2dp_started_) {
+      this->auto_connect_started_ = millis();
+      this->publish_event_("BOOT: Classic BT/A2DP initialized before WiFi");
+    }
+  }
 }
 
 void BtAudioBridge::loop() {
@@ -498,6 +510,3 @@ const char *BtAudioBridge::reset_reason_() {
     default: return "OTHER";
   }
 }
-
-}  // namespace bt_audio_bridge
-}  // namespace esphome
