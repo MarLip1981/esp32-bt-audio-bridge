@@ -42,8 +42,11 @@ class BtAudioBridge : public Component {
   void loop() override;
   void dump_config() override;
 
+  // Classic Bluetooth/A2DP must initialize before Wi-Fi so the BT stack gets
+  // the largest possible contiguous internal-heap regions. The ESPHome
+  // Bluetooth priority is intentionally used instead of AFTER_WIFI.
   float get_setup_priority() const override {
-    return setup_priority::AFTER_WIFI;
+    return setup_priority::BLUETOOTH;
   }
 
   void set_status_sensor(text_sensor::TextSensor *sensor) { this->status_sensor_ = sensor; }
