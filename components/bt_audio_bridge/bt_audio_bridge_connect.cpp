@@ -35,6 +35,26 @@ void BtAudioBridge::connect_to(const char *mac) {
   this->a2dp_source_.connect_to(address);
 }
 
+void BtAudioBridge::disconnect() {
+  this->auto_connect_pending_ = false;
+  this->scan_requested_ = false;
+  this->connected_ = false;
+  this->engine_test_active_ = false;
+  this->speaker_started_ = false;
+  this->finish_requested_ = false;
+  this->audio_engine_.clear();
+  this->audio_engine_.end();
+
+  if (this->a2dp_started_) {
+    this->a2dp_source_.disconnect();
+  }
+
+  std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
+  this->status_[sizeof(this->status_) - 1] = '\0';
+  this->publish_status_();
+  this->publish_event_("BT: disconnected");
+}
+
 void BtAudioBridge::forget_speaker() {
   this->auto_connect_pending_ = false;
   this->scan_requested_ = false;
@@ -49,10 +69,15 @@ void BtAudioBridge::forget_speaker() {
   this->connected_ = false;
   this->scanning_ = false;
   this->engine_test_active_ = false;
+  this->speaker_started_ = false;
+  this->finish_requested_ = false;
+  this->audio_engine_.clear();
+  this->audio_engine_.end();
   if (this->device_sensor_ != nullptr) this->device_sensor_->publish_state("NONE");
   if (this->rssi_sensor_ != nullptr) this->rssi_sensor_->publish_state(NAN);
   if (this->battery_sensor_ != nullptr) this->battery_sensor_->publish_state("UNKNOWN");
   std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
+  this->status_[sizeof(this->status_) - 1] = '\0';
   this->publish_status_();
   this->publish_event_("BT: saved speaker forgotten");
 }
