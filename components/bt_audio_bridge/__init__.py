@@ -3,7 +3,7 @@ from pathlib import Path
 import esphome.codegen as cg
 import esphome.config_validation as cv
 
-from esphome.components import sensor, text_sensor
+from esphome.components import sensor, text_sensor, speaker
 from esphome.const import CONF_ID
 
 from esphome.components.esp32 import (
@@ -43,7 +43,7 @@ CONF_BT_CONNECTIONS = "bt_connections"
 CONF_BT_RECONNECTS = "bt_reconnects"
 CONF_BT_UPTIME = "bt_uptime"
 
-AUTO_LOAD = ["sensor", "text_sensor"]
+AUTO_LOAD = ["sensor", "text_sensor", "speaker"]
 DEPENDENCIES = ["wifi"]
 
 bt_audio_bridge_ns = cg.esphome_ns.namespace("bt_audio_bridge")
@@ -51,6 +51,7 @@ bt_audio_bridge_ns = cg.esphome_ns.namespace("bt_audio_bridge")
 BtAudioBridge = bt_audio_bridge_ns.class_(
     "BtAudioBridge",
     cg.Component,
+    speaker.Speaker,
 )
 
 BtAudioBridgeDiagnostics = bt_audio_bridge_ns.class_(
@@ -92,7 +93,7 @@ CONFIG_SCHEMA = cv.Schema({
     cv.Optional(CONF_EVENT): text_sensor.text_sensor_schema(),
     cv.Optional(CONF_RESET_REASON): text_sensor.text_sensor_schema(),
     cv.Optional(CONF_DEVICE): text_sensor.text_sensor_schema(),
-    cv.Optional(CONF_RSSI): sensor.sensor_schema(unit_of_measurement="dBm", accuracy_decimals=0),
+    cv.Optional(CONF_RSSI): sensor.sensor_schema(unit_of_measureMENT="dBm", accuracy_decimals=0),
     cv.Optional(CONF_BATTERY): text_sensor.text_sensor_schema(),
     cv.Optional(CONF_AUDIO_URL): cv.string_strict,
     cv.Optional(CONF_DEVICES, default=[]): cv.All(
