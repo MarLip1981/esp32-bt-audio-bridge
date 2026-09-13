@@ -44,8 +44,6 @@ class BtAudioBridge : public Component, public speaker::Speaker {
     return setup_priority::BLUETOOTH;
   }
 
-  // ESPHome native Speaker interface. Audio data from the HA speaker media
-  // player is written directly into the existing PCM engine ring buffer.
   size_t play(const uint8_t *data, size_t length) override;
   void start() override;
   void stop() override;
@@ -70,9 +68,6 @@ class BtAudioBridge : public Component, public speaker::Speaker {
   void connect_slot(size_t index);
   void disconnect();
   void forget_speaker();
-  void start_test_tone();
-  void stop_test_tone();
-  void start_engine_test();
   void on_discovery_stopped();
   void on_device_found(const char *name, const char *mac, int rssi);
   void on_real_rssi(int rssi);
@@ -89,10 +84,7 @@ class BtAudioBridge : public Component, public speaker::Speaker {
     int rssi{-127};
   };
 
-  static int32_t test_tone_callback_(uint8_t *data, int32_t len);
   static int32_t engine_audio_callback_(uint8_t *data, int32_t len);
-  static void engine_test_task_(void *arg);
-  int32_t generate_test_tone_(uint8_t *data, int32_t len);
   void publish_status_();
   void publish_event_(const char *event);
   void publish_device_(size_t index);
@@ -122,13 +114,10 @@ class BtAudioBridge : public Component, public speaker::Speaker {
   bool a2dp_started_{false};
   bool scan_requested_{false};
   bool auto_connect_pending_{false};
-  bool test_tone_active_{false};
-  volatile bool engine_test_active_{false};
+  bool speaker_audio_active_{false};
   bool speaker_started_{false};
   bool finish_requested_{false};
   uint32_t auto_connect_started_{0};
-  uint32_t test_tone_until_{0};
-  uint32_t test_tone_phase_{0};
 
   char selected_mac_[18]{};
   char selected_name_[64]{};
