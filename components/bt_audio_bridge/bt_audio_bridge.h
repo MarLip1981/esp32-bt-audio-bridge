@@ -20,12 +20,35 @@ class BtAudioBridgeA2DPSource : public BluetoothA2DPSource {
   explicit BtAudioBridgeA2DPSource(BtAudioBridge *owner) : owner_(owner) {
     this->set_event_stack_size(2048);
     this->set_event_queue_size(10);
+
+    // Keep the A2DP link connected but do not leave the Bluedroid media
+    // encoder/timer running while the bridge has no audio to send. The ESP-IDF
+    // source stack allocates an SBC TX packet before asking the PCM callback for
+    // data, so an idle callback alone does NOT prevent the ~4 KB allocation.
+    // We therefore suspend media immediately after the sink starts it.
+    this->set_on_audio_state_changed(
+        [](esp_a2d_audio_state_t state, void *obj) {
+          auto *source = static_cast<BtAudioBridgeA2DPSource *>(obj);
+          if (source == nullptr) return;
+          if (source->hold_audio_ && state == ESP_A2D_AUDIO_STATE_STARTED) {
+            source->pause();
+          }
+        },
+        this);
   }
+
+  // When true, a remote A2DP START is immediately suspended. The future audio
+  // ingress path will set this false and call play() when real PCM is queued.
+  void set_idle_hold(bool hold) { this->hold_audio_ = hold; }
+  bool idle_hold() const { return this->hold_audio_; }
+
  protected:
   void app_gap_callback(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param) override;
   void bt_av_notify_evt_handler(uint8_t event, esp_avrc_rn_param_t *param) override;
+
  private:
   BtAudioBridge *owner_;
+  bool hold_audio_{true};
 };
 
 class BtAudioBridge : public Component {
