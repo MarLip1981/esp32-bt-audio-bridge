@@ -3,7 +3,7 @@ from pathlib import Path
 import esphome.codegen as cg
 import esphome.config_validation as cv
 
-from esphome.components import sensor, speaker, text_sensor
+from esphome.components import sensor, text_sensor
 from esphome.const import CONF_ID
 
 from esphome.components.esp32 import (
@@ -42,25 +42,15 @@ CONF_BT_CONNECTIONS = "bt_connections"
 CONF_BT_RECONNECTS = "bt_reconnects"
 CONF_BT_UPTIME = "bt_uptime"
 
-AUTO_LOAD = ["sensor", "text_sensor", "speaker"]
+AUTO_LOAD = ["sensor", "text_sensor"]
 DEPENDENCIES = ["wifi"]
 
 bt_audio_bridge_ns = cg.esphome_ns.namespace("bt_audio_bridge")
 
-BtAudioBridge = bt_audio_bridge_ns.class_(
-    "BtAudioBridge",
-    cg.Component,
-    speaker.Speaker,
-)
+BtAudioBridge = bt_audio_bridge_ns.class_("BtAudioBridge", cg.Component)
+BtAudioBridgeDiagnostics = bt_audio_bridge_ns.class_("BtAudioBridgeDiagnostics", cg.Component)
 
-BtAudioBridgeDiagnostics = bt_audio_bridge_ns.class_(
-    "BtAudioBridgeDiagnostics",
-    cg.Component,
-)
-
-DEVICE_SLOT_SCHEMA = cv.Schema({
-    cv.Required(CONF_TEXT_SENSOR): text_sensor.text_sensor_schema(),
-})
+DEVICE_SLOT_SCHEMA = cv.Schema({cv.Required(CONF_TEXT_SENSOR): text_sensor.text_sensor_schema()})
 
 DIAGNOSTICS_SCHEMA = cv.Schema({
     cv.GenerateID(): cv.declare_id(BtAudioBridgeDiagnostics),
@@ -86,7 +76,7 @@ DIAGNOSTICS_SCHEMA = cv.Schema({
     cv.Optional(CONF_BT_UPTIME): sensor.sensor_schema(unit_of_measurement="s", accuracy_decimals=0),
 })
 
-CONFIG_SCHEMA = speaker.SPEAKER_SCHEMA.extend({
+CONFIG_SCHEMA = cv.Schema({
     cv.GenerateID(): cv.declare_id(BtAudioBridge),
     cv.Optional(CONF_STATUS): text_sensor.text_sensor_schema(),
     cv.Optional(CONF_EVENT): text_sensor.text_sensor_schema(),
@@ -94,29 +84,22 @@ CONFIG_SCHEMA = speaker.SPEAKER_SCHEMA.extend({
     cv.Optional(CONF_DEVICE): text_sensor.text_sensor_schema(),
     cv.Optional(CONF_RSSI): sensor.sensor_schema(unit_of_measurement="dBm", accuracy_decimals=0),
     cv.Optional(CONF_BATTERY): text_sensor.text_sensor_schema(),
-    cv.Optional(CONF_DEVICES, default=[]): cv.All(
-        cv.ensure_list(DEVICE_SLOT_SCHEMA),
-        cv.Length(max=8),
-    ),
+    cv.Optional(CONF_DEVICES, default=[]): cv.All(cv.ensure_list(DEVICE_SLOT_SCHEMA), cv.Length(max=8)),
     cv.Optional(CONF_DIAGNOSTICS): DIAGNOSTICS_SCHEMA,
 }).extend(cv.COMPONENT_SCHEMA)
-
 
 async def _new_sensor(config, key, setter, var):
     if sensor_config := config.get(key):
         value = await sensor.new_sensor(sensor_config)
         cg.add(getattr(var, setter)(value))
 
-
 async def _new_text_sensor(config, key, setter, var):
     if text_config := config.get(key):
         value = await text_sensor.new_text_sensor(text_config)
         cg.add(getattr(var, setter)(value))
 
-
 async def to_code(config):
     include_builtin_idf_component("bt")
-
     add_idf_sdkconfig_option("CONFIG_BT_ENABLED", True)
     add_idf_sdkconfig_option("CONFIG_BTDM_CTRL_MODE_BLE_ONLY", False)
     add_idf_sdkconfig_option("CONFIG_BTDM_CTRL_MODE_BR_EDR_ONLY", True)
@@ -126,13 +109,6 @@ async def to_code(config):
     add_idf_sdkconfig_option("CONFIG_BT_A2DP_ENABLE", True)
     add_idf_sdkconfig_option("CONFIG_BT_BLE_ENABLED", False)
     add_idf_sdkconfig_option("CONFIG_BT_CLASSIC_ENABLE_POWER_CTRL_VSC", True)
-
-    # This bridge has exactly one Classic Bluetooth audio peer. Limiting the
-    # controller/host connection pools releases static RAM for A2DP SBC TX.
-    add_idf_sdkconfig_option("CONFIG_BTDM_CTRL_BR_EDR_MAX_ACL_CONN", 1)
-    add_idf_sdkconfig_option("CONFIG_BTDM_CTRL_BR_EDR_MAX_SYNC_CONN", 0)
-    add_idf_sdkconfig_option("CONFIG_BT_ACL_CONNECTIONS", 1)
-
     add_idf_sdkconfig_option("CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS", True)
     add_idf_sdkconfig_option("CONFIG_FREERTOS_USE_STATS_FORMATTING_FUNCTIONS", True)
     add_idf_sdkconfig_option("CONFIG_FREERTOS_USE_TRACE_FACILITY", True)
@@ -141,48 +117,27 @@ async def to_code(config):
     add_idf_sdkconfig_option("CONFIG_FREERTOS_RUN_TIME_STATS_USING_CPU_CLK", False)
     add_idf_sdkconfig_option("CONFIG_FREERTOS_RUN_TIME_COUNTER_TYPE_U64", True)
     add_idf_sdkconfig_option("CONFIG_FREERTOS_RUN_TIME_COUNTER_TYPE_U32", False)
-
-    add_idf_component(
-        name="ESP32-A2DP",
-        path=str(Path(__file__).resolve().parent.parent / "ESP32-A2DP"),
-    )
+    add_idf_component(name="ESP32-A2DP", path=str(Path(__file__).resolve().parent.parent / "ESP32-A2DP"))
 
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
-    await speaker.register_speaker(var, config)
-
     if status_config := config.get(CONF_STATUS):
-        status_sensor = await text_sensor.new_text_sensor(status_config)
-        cg.add(var.set_status_sensor(status_sensor))
-
+        cg.add(var.set_status_sensor(await text_sensor.new_text_sensor(status_config)))
     if event_config := config.get(CONF_EVENT):
-        event_sensor = await text_sensor.new_text_sensor(event_config)
-        cg.add(var.set_event_sensor(event_sensor))
-
+        cg.add(var.set_event_sensor(await text_sensor.new_text_sensor(event_config)))
     if reset_config := config.get(CONF_RESET_REASON):
-        reset_sensor = await text_sensor.new_text_sensor(reset_config)
-        cg.add(var.set_reset_reason_sensor(reset_sensor))
-
+        cg.add(var.set_reset_reason_sensor(await text_sensor.new_text_sensor(reset_config)))
     if device_config := config.get(CONF_DEVICE):
-        device_sensor = await text_sensor.new_text_sensor(device_config)
-        cg.add(var.set_device_sensor(device_sensor))
-
+        cg.add(var.set_device_sensor(await text_sensor.new_text_sensor(device_config)))
     if rssi_config := config.get(CONF_RSSI):
-        rssi_sensor = await sensor.new_sensor(rssi_config)
-        cg.add(var.set_rssi_sensor(rssi_sensor))
-
+        cg.add(var.set_rssi_sensor(await sensor.new_sensor(rssi_config)))
     if battery_config := config.get(CONF_BATTERY):
-        battery_sensor = await text_sensor.new_text_sensor(battery_config)
-        cg.add(var.set_battery_sensor(battery_sensor))
-
+        cg.add(var.set_battery_sensor(await text_sensor.new_text_sensor(battery_config)))
     for slot in config.get(CONF_DEVICES, []):
-        slot_sensor = await text_sensor.new_text_sensor(slot[CONF_TEXT_SENSOR])
-        cg.add(var.add_device_slot(slot_sensor))
-
+        cg.add(var.add_device_slot(await text_sensor.new_text_sensor(slot[CONF_TEXT_SENSOR])))
     if diagnostics_config := config.get(CONF_DIAGNOSTICS):
         diagnostics_var = cg.new_Pvariable(diagnostics_config[CONF_ID])
         await cg.register_component(diagnostics_var, diagnostics_config)
-
         await _new_sensor(diagnostics_config, CONF_WIFI_RSSI, "set_wifi_rssi", diagnostics_var)
         await _new_sensor(diagnostics_config, CONF_WIFI_SIGNAL, "set_wifi_signal", diagnostics_var)
         await _new_sensor(diagnostics_config, CONF_WIFI_CHANNEL, "set_wifi_channel", diagnostics_var)
@@ -191,7 +146,6 @@ async def to_code(config):
         await _new_text_sensor(diagnostics_config, CONF_WIFI_PHY, "set_wifi_phy", diagnostics_var)
         await _new_text_sensor(diagnostics_config, CONF_WIFI_STATUS, "set_wifi_status", diagnostics_var)
         await _new_sensor(diagnostics_config, CONF_WIFI_UPTIME, "set_wifi_uptime", diagnostics_var)
-
         await _new_sensor(diagnostics_config, CONF_CPU_LOAD, "set_cpu_load", diagnostics_var)
         await _new_sensor(diagnostics_config, CONF_CPU_FREQUENCY, "set_cpu_frequency", diagnostics_var)
         await _new_sensor(diagnostics_config, CONF_HEAP_FREE, "set_heap_free", diagnostics_var)
@@ -199,7 +153,6 @@ async def to_code(config):
         await _new_sensor(diagnostics_config, CONF_HEAP_PERCENT, "set_heap_percent", diagnostics_var)
         await _new_sensor(diagnostics_config, CONF_HEAP_MIN_FREE, "set_heap_min_free", diagnostics_var)
         await _new_sensor(diagnostics_config, CONF_HEAP_LARGEST_BLOCK, "set_heap_largest_block", diagnostics_var)
-
         await _new_text_sensor(diagnostics_config, CONF_BT_STATUS, "set_bt_status", diagnostics_var)
         await _new_text_sensor(diagnostics_config, CONF_BT_CONTROLLER, "set_bt_controller", diagnostics_var)
         await _new_sensor(diagnostics_config, CONF_BT_CONNECTIONS, "set_bt_connections", diagnostics_var)
