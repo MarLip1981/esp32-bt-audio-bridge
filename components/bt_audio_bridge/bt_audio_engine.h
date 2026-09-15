@@ -3,20 +3,14 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <freertos/FreeRTOS.h>
-#include <freertos/stream_buffer.h>
-
 namespace esphome {
 namespace bt_audio_bridge {
 
 class BtAudioEngine {
  public:
-  // Keep the application PCM buffer below the ~4 KiB contiguous allocation
-  // requested by Bluedroid's SBC TX path. This leaves a larger contiguous
-  // heap block available to Classic Bluetooth while still providing a small
-  // streaming prebuffer.
-  static constexpr size_t BUFFER_SIZE = 2 * 1024;
-  static constexpr size_t TRIGGER_LEVEL = 1;
+  // Static ring buffer: no heap allocation during A2DP start/playback.
+  // 8 KiB is ~46 ms of 44.1 kHz / 16-bit stereo PCM.
+  static constexpr size_t BUFFER_SIZE = 8 * 1024;
 
   bool begin();
   void end();
@@ -32,7 +26,10 @@ class BtAudioEngine {
   uint32_t bytes_read() const { return this->bytes_read_; }
 
  private:
-  StreamBufferHandle_t buffer_{nullptr};
+  uint8_t buffer_[BUFFER_SIZE]{};
+  volatile size_t read_pos_{0};
+  volatile size_t write_pos_{0};
+  volatile size_t used_{0};
   volatile uint32_t underruns_{0};
   volatile uint32_t overruns_{0};
   volatile uint32_t bytes_written_{0};
