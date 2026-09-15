@@ -25,7 +25,7 @@ logger:
 
 api:
   encryption:
-    key: !secret bt_audio_bridge_api_key
+    key: !secret bt_audio_bridge__encryption_key
 
 ota:
   - platform: esphome
