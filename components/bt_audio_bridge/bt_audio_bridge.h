@@ -8,7 +8,6 @@
 #include "bt_audio_engine.h"
 
 #include <BluetoothA2DPSource.h>
-#include <esp_a2dp_api.h>
 
 namespace esphome {
 namespace bt_audio_bridge {
@@ -21,34 +20,29 @@ class BtAudioBridgeA2DPSource : public BluetoothA2DPSource {
   explicit BtAudioBridgeA2DPSource(BtAudioBridge *owner) : owner_(owner) {
     this->set_event_stack_size(2048);
     this->set_event_queue_size(10);
-
-    // IMPORTANT: an idle A2DP Source still enters the Bluedroid media timer
-    // after the sink starts the stream. ESP-IDF allocates the SBC TX packet
-    // before invoking our PCM callback. Returning 0 from the callback alone
-    // therefore does not avoid the allocation. Suspend the media datapath as
-    // soon as the remote side starts it; the Bluetooth/A2DP link stays up.
-    this->set_on_audio_state_changed(
-        [](esp_a2d_audio_state_t state, void *obj) {
-          auto *source = static_cast<BtAudioBridgeA2DPSource *>(obj);
-          if (source == nullptr) return;
-          if (source->hold_audio_ && state == ESP_A2D_AUDIO_STATE_STARTED) {
-            esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_SUSPEND);
-          }
-        },
-        this);
   }
 
-  // The future HA audio ingress will set this false before issuing START.
-  void set_idle_hold(bool hold) { this->hold_audio_ = hold; }
-  bool idle_hold() const { return this->hold_audio_; }
-
  protected:
+  // The upstream ESP32-A2DP Source starts the media timer from its 10 s
+  // heartbeat once a speaker is connected. In our bridge that is the wrong
+  // lifecycle: there may be no PCM waiting yet, and Bluedroid allocates a
+  // ~4 KiB SBC TX packet on every media tick before asking our callback for
+  // data. On an ESP32-WROOM this fragments the small remaining heap and causes
+  // the exact 4112-byte malloc failures seen in our logs.
+  //
+  // Keep the A2DP connection alive but suppress that idle media-start check.
+  // When real audio is queued, the future audio ingress path will explicitly
+  // issue ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY to start transmission.
+  void bt_app_av_state_connected_hdlr(uint16_t event, void *param) override {
+    if (event == BT_APP_HEART_BEAT_EVT) return;
+    BluetoothA2DPSource::bt_app_av_state_connected_hdlr(event, param);
+  }
+
   void app_gap_callback(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param) override;
   void bt_av_notify_evt_handler(uint8_t event, esp_avrc_rn_param_t *param) override;
 
  private:
   BtAudioBridge *owner_;
-  bool hold_audio_{true};
 };
 
 class BtAudioBridge : public Component {
