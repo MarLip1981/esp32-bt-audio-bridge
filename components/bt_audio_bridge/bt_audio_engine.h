@@ -11,24 +11,21 @@ namespace bt_audio_bridge {
 
 class BtAudioEngine {
  public:
-  // Keep the PCM buffer below the size of the contiguous A2DP TX allocation
-  // needed by Bluedroid. 2 KiB is enough for the streaming prebuffer while
-  // freeing RAM for the Classic Bluetooth SBC path.
+  // Keep the application PCM buffer below the ~4 KiB contiguous allocation
+  // requested by Bluedroid's SBC TX path. This leaves a larger contiguous
+  // heap block available to Classic Bluetooth while still providing a small
+  // streaming prebuffer.
   static constexpr size_t BUFFER_SIZE = 2 * 1024;
   static constexpr size_t TRIGGER_LEVEL = 1;
 
   bool begin();
   void end();
   void clear();
-
-  // Non-blocking producer/consumer operations.
   size_t write(const uint8_t *data, size_t len);
   size_t read(uint8_t *data, size_t len);
-
   size_t available() const;
   size_t capacity() const { return BUFFER_SIZE; }
   uint8_t fill_percent() const;
-
   uint32_t underruns() const { return this->underruns_; }
   uint32_t overruns() const { return this->overruns_; }
   uint32_t bytes_written() const { return this->bytes_written_; }
