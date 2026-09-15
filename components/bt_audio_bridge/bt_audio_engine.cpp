@@ -6,11 +6,8 @@ namespace esphome {
 namespace bt_audio_bridge {
 
 bool BtAudioEngine::begin() {
-  if (this->buffer_ != nullptr) return true;
-
-  this->buffer_ = xStreamBufferCreate(BUFFER_SIZE, TRIGGER_LEVEL);
-  if (this->buffer_ == nullptr) return false;
-
+  // The ring buffer lives in the object itself. begin() must never allocate.
+  this->clear();
   this->underruns_ = 0;
   this->overruns_ = 0;
   this->bytes_written_ = 0;
@@ -19,51 +16,71 @@ bool BtAudioEngine::begin() {
 }
 
 void BtAudioEngine::end() {
-  if (this->buffer_ != nullptr) {
-    vStreamBufferDelete(this->buffer_);
-    this->buffer_ = nullptr;
-  }
+  // Intentionally no free/delete: the PCM ring buffer is static storage.
+  this->clear();
 }
 
 void BtAudioEngine::clear() {
-  if (this->buffer_ != nullptr) {
-    xStreamBufferReset(this->buffer_);
-  }
+  this->read_pos_ = 0;
+  this->write_pos_ = 0;
+  this->used_ = 0;
 }
 
 size_t BtAudioEngine::write(const uint8_t *data, size_t len) {
-  if (this->buffer_ == nullptr || data == nullptr || len == 0) return 0;
+  if (data == nullptr || len == 0) return 0;
 
-  const size_t written = xStreamBufferSend(this->buffer_, data, len, 0);
-  this->bytes_written_ += static_cast<uint32_t>(written);
+  size_t free_bytes = BUFFER_SIZE - this->used_;
+  if (free_bytes == 0) {
+    this->overruns_++;
+    return 0;
+  }
 
-  if (written < len) this->overruns_++;
-  return written;
+  const size_t to_write = len < free_bytes ? len : free_bytes;
+  size_t first = BUFFER_SIZE - this->write_pos_;
+  if (first > to_write) first = to_write;
+  std::memcpy(this->buffer_ + this->write_pos_, data, first);
+
+  const size_t second = to_write - first;
+  if (second != 0) std::memcpy(this->buffer_, data + first, second);
+
+  this->write_pos_ = (this->write_pos_ + to_write) % BUFFER_SIZE;
+  this->used_ += to_write;
+  this->bytes_written_ += static_cast<uint32_t>(to_write);
+
+  if (to_write < len) this->overruns_++;
+  return to_write;
 }
 
 size_t BtAudioEngine::read(uint8_t *data, size_t len) {
   if (data == nullptr || len == 0) return 0;
 
-  if (this->buffer_ == nullptr) {
-    std::memset(data, 0, len);
-    this->underruns_++;
-    return len;
+  const size_t available_bytes = this->used_;
+  const size_t to_read = len < available_bytes ? len : available_bytes;
+
+  if (to_read != 0) {
+    size_t first = BUFFER_SIZE - this->read_pos_;
+    if (first > to_read) first = to_read;
+    std::memcpy(data, this->buffer_ + this->read_pos_, first);
+
+    const size_t second = to_read - first;
+    if (second != 0) std::memcpy(data + first, this->buffer_, second);
+
+    this->read_pos_ = (this->read_pos_ + to_read) % BUFFER_SIZE;
+    this->used_ -= to_read;
+    this->bytes_read_ += static_cast<uint32_t>(to_read);
   }
 
-  const size_t received = xStreamBufferReceive(this->buffer_, data, len, 0);
-  this->bytes_read_ += static_cast<uint32_t>(received);
-
-  if (received < len) {
-    std::memset(data + received, 0, len - received);
+  if (to_read < len) {
+    std::memset(data + to_read, 0, len - to_read);
     this->underruns_++;
   }
 
+  // Keep the A2DP callback contract: always return the requested PCM length.
   return len;
 }
 
 size_t BtAudioEngine::available() const {
-  if (this->buffer_ == nullptr) return 0;
-  return xStreamBufferBytesAvailable(this->buffer_);
+  return this->used_;
 }
 
 uint8_t BtAudioEngine::fill_percent() const {
