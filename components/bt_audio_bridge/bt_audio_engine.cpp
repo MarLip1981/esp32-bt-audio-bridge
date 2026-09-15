@@ -31,7 +31,7 @@ size_t BtAudioEngine::write(const uint8_t *data, size_t len) {
   const size_t read_pos = this->read_pos_;
   const size_t write_pos = this->write_pos_;
   const size_t used = write_pos >= read_pos ? write_pos - read_pos : BUFFER_SIZE - read_pos + write_pos;
-  const size_t free_bytes = BUFFER_SIZE - used;
+  const size_t free_bytes = (BUFFER_SIZE - 1U) - used;
   if (free_bytes == 0) {
     this->overruns_++;
     return 0;
@@ -88,7 +88,7 @@ size_t BtAudioEngine::available() const {
 }
 
 uint8_t BtAudioEngine::fill_percent() const {
-  return static_cast<uint8_t>((this->available() * 100U) / BUFFER_SIZE);
+  return static_cast<uint8_t>((this->available() * 100U) / (BUFFER_SIZE - 1U));
 }
 
 }  // namespace bt_audio_bridge
