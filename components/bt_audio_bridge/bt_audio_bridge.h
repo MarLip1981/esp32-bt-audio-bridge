@@ -19,8 +19,10 @@ extern BtAudioBridge *global_bt_audio_bridge;
 class BtAudioBridgeA2DPSource : public BluetoothA2DPSource {
  public:
   explicit BtAudioBridgeA2DPSource(BtAudioBridge *owner) : owner_(owner) {
+    // Keep the application event task small. This bridge only handles one
+    // Classic BT/A2DP connection and does not need a large work queue.
     this->set_event_stack_size(2048);
-    this->set_event_queue_size(10);
+    this->set_event_queue_size(4);
   }
 
  protected:
