@@ -8,6 +8,7 @@
 #include "bt_audio_engine.h"
 
 #include <BluetoothA2DPSource.h>
+#include <esp_a2dp_api.h>
 
 namespace esphome {
 namespace bt_audio_bridge {
@@ -21,24 +22,23 @@ class BtAudioBridgeA2DPSource : public BluetoothA2DPSource {
     this->set_event_stack_size(2048);
     this->set_event_queue_size(10);
 
-    // Keep the A2DP link connected but do not leave the Bluedroid media
-    // encoder/timer running while the bridge has no audio to send. The ESP-IDF
-    // source stack allocates an SBC TX packet before asking the PCM callback for
-    // data, so an idle callback alone does NOT prevent the ~4 KB allocation.
-    // We therefore suspend media immediately after the sink starts it.
+    // IMPORTANT: an idle A2DP Source still enters the Bluedroid media timer
+    // after the sink starts the stream. ESP-IDF allocates the SBC TX packet
+    // before invoking our PCM callback. Returning 0 from the callback alone
+    // therefore does not avoid the allocation. Suspend the media datapath as
+    // soon as the remote side starts it; the Bluetooth/A2DP link stays up.
     this->set_on_audio_state_changed(
         [](esp_a2d_audio_state_t state, void *obj) {
           auto *source = static_cast<BtAudioBridgeA2DPSource *>(obj);
           if (source == nullptr) return;
           if (source->hold_audio_ && state == ESP_A2D_AUDIO_STATE_STARTED) {
-            source->pause();
+            esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_SUSPEND);
           }
         },
         this);
   }
 
-  // When true, a remote A2DP START is immediately suspended. The future audio
-  // ingress path will set this false and call play() when real PCM is queued.
+  // The future HA audio ingress will set this false before issuing START.
   void set_idle_hold(bool hold) { this->hold_audio_ = hold; }
   bool idle_hold() const { return this->hold_audio_; }
 
