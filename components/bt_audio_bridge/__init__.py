@@ -127,6 +127,12 @@ async def to_code(config):
     add_idf_sdkconfig_option("CONFIG_BT_BLE_ENABLED", False)
     add_idf_sdkconfig_option("CONFIG_BT_CLASSIC_ENABLE_POWER_CTRL_VSC", True)
 
+    # This bridge has exactly one Classic Bluetooth audio peer. Limiting the
+    # controller/host connection pools releases static RAM for A2DP SBC TX.
+    add_idf_sdkconfig_option("CONFIG_BTDM_CTRL_BR_EDR_MAX_ACL_CONN", 1)
+    add_idf_sdkconfig_option("CONFIG_BTDM_CTRL_BR_EDR_MAX_SYNC_CONN", 0)
+    add_idf_sdkconfig_option("CONFIG_BT_ACL_CONNECTIONS", 1)
+
     add_idf_sdkconfig_option("CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS", True)
     add_idf_sdkconfig_option("CONFIG_FREERTOS_USE_STATS_FORMATTING_FUNCTIONS", True)
     add_idf_sdkconfig_option("CONFIG_FREERTOS_USE_TRACE_FACILITY", True)
