@@ -23,28 +23,29 @@ void BtAudioEngine::end() {
 void BtAudioEngine::clear() {
   this->read_pos_ = 0;
   this->write_pos_ = 0;
-  this->used_ = 0;
 }
 
 size_t BtAudioEngine::write(const uint8_t *data, size_t len) {
   if (data == nullptr || len == 0) return 0;
 
-  size_t free_bytes = BUFFER_SIZE - this->used_;
+  const size_t read_pos = this->read_pos_;
+  const size_t write_pos = this->write_pos_;
+  const size_t used = write_pos >= read_pos ? write_pos - read_pos : BUFFER_SIZE - read_pos + write_pos;
+  const size_t free_bytes = BUFFER_SIZE - used;
   if (free_bytes == 0) {
     this->overruns_++;
     return 0;
   }
 
   const size_t to_write = len < free_bytes ? len : free_bytes;
-  size_t first = BUFFER_SIZE - this->write_pos_;
+  size_t first = BUFFER_SIZE - write_pos;
   if (first > to_write) first = to_write;
-  std::memcpy(this->buffer_ + this->write_pos_, data, first);
+  std::memcpy(this->buffer_ + write_pos, data, first);
 
   const size_t second = to_write - first;
   if (second != 0) std::memcpy(this->buffer_, data + first, second);
 
-  this->write_pos_ = (this->write_pos_ + to_write) % BUFFER_SIZE;
-  this->used_ += to_write;
+  this->write_pos_ = (write_pos + to_write) % BUFFER_SIZE;
   this->bytes_written_ += static_cast<uint32_t>(to_write);
 
   if (to_write < len) this->overruns_++;
@@ -54,19 +55,20 @@ size_t BtAudioEngine::write(const uint8_t *data, size_t len) {
 size_t BtAudioEngine::read(uint8_t *data, size_t len) {
   if (data == nullptr || len == 0) return 0;
 
-  const size_t available_bytes = this->used_;
+  const size_t read_pos = this->read_pos_;
+  const size_t write_pos = this->write_pos_;
+  const size_t available_bytes = write_pos >= read_pos ? write_pos - read_pos : BUFFER_SIZE - read_pos + write_pos;
   const size_t to_read = len < available_bytes ? len : available_bytes;
 
   if (to_read != 0) {
-    size_t first = BUFFER_SIZE - this->read_pos_;
+    size_t first = BUFFER_SIZE - read_pos;
     if (first > to_read) first = to_read;
-    std::memcpy(data, this->buffer_ + this->read_pos_, first);
+    std::memcpy(data, this->buffer_ + read_pos, first);
 
     const size_t second = to_read - first;
     if (second != 0) std::memcpy(data + first, this->buffer_, second);
 
-    this->read_pos_ = (this->read_pos_ + to_read) % BUFFER_SIZE;
-    this->used_ -= to_read;
+    this->read_pos_ = (read_pos + to_read) % BUFFER_SIZE;
     this->bytes_read_ += static_cast<uint32_t>(to_read);
   }
 
@@ -80,12 +82,13 @@ size_t BtAudioEngine::read(uint8_t *data, size_t len) {
 }
 
 size_t BtAudioEngine::available() const {
-  return this->used_;
+  const size_t read_pos = this->read_pos_;
+  const size_t write_pos = this->write_pos_;
+  return write_pos >= read_pos ? write_pos - read_pos : BUFFER_SIZE - read_pos + write_pos;
 }
 
 uint8_t BtAudioEngine::fill_percent() const {
-  const size_t used = this->available();
-  return static_cast<uint8_t>((used * 100U) / BUFFER_SIZE);
+  return static_cast<uint8_t>((this->available() * 100U) / BUFFER_SIZE);
 }
 
 }  // namespace bt_audio_bridge
