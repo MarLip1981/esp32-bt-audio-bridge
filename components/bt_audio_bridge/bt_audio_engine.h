@@ -11,9 +11,10 @@ namespace bt_audio_bridge {
 
 class BtAudioEngine {
  public:
-  // Keep the PCM buffer small so the Classic BT stack can obtain its contiguous
-  // A2DP TX buffers (~4 KiB) on the ESP32. This is ~23 ms at 44.1 kHz/stereo.
-  static constexpr size_t BUFFER_SIZE = 4 * 1024;
+  // Keep the PCM buffer below the size of the contiguous A2DP TX allocation
+  // needed by Bluedroid. 2 KiB is enough for the streaming prebuffer while
+  // freeing RAM for the Classic Bluetooth SBC path.
+  static constexpr size_t BUFFER_SIZE = 2 * 1024;
   static constexpr size_t TRIGGER_LEVEL = 1;
 
   bool begin();
