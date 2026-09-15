@@ -8,7 +8,7 @@ namespace bt_audio_bridge {
 
 class BtAudioEngine {
  public:
-  // Static ring buffer: no heap allocation during A2DP start/playback.
+  // Static SPSC ring buffer: no heap allocation during A2DP start/playback.
   // 8 KiB is ~46 ms of 44.1 kHz / 16-bit stereo PCM.
   static constexpr size_t BUFFER_SIZE = 8 * 1024;
 
@@ -29,7 +29,6 @@ class BtAudioEngine {
   uint8_t buffer_[BUFFER_SIZE]{};
   volatile size_t read_pos_{0};
   volatile size_t write_pos_{0};
-  volatile size_t used_{0};
   volatile uint32_t underruns_{0};
   volatile uint32_t overruns_{0};
   volatile uint32_t bytes_written_{0};
