@@ -1,0 +1,99 @@
+substitutions:
+  device_name: bt-audio-bridge
+  friendly_name: BT Audio Bridge
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  comment: ESP32-WROOM Bluetooth Classic A2DP audio bridge
+  min_version: 2026.7.0
+
+  project:
+    name: marlip1981.bt_audio_bridge
+    version: "0.1.0-baseline"
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+logger:
+  level: INFO
+  logs:
+    bt_audio_bridge: INFO
+    esp32_a2dp_source: WARN
+
+api:
+  encryption:
+    key: !secret bt_audio_bridge_api_key
+
+ota:
+  - platform: esphome
+    password: !secret bt_audio_bridge_ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  power_save_mode: none
+  fast_connect: true
+  ap:
+    ssid: "BT Audio Bridge Fallback"
+    password: !secret bt_audio_bridge_ap_password
+
+captive_portal:
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "BT Bridge IP"
+    ssid:
+      name: "BT Bridge WiFi SSID"
+    bssid:
+      name: "BT Bridge WiFi BSSID"
+
+  - platform: template
+    name: "BT Bridge Build"
+    lambda: |-
+      return {"final-bridge-from-zero / baseline"};
+    update_interval: never
+
+bt_audio_bridge:
+  id: bt_bridge
+  status:
+    name: "BT Bridge Status"
+    icon: mdi:bluetooth-audio
+  event:
+    name: "BT Bridge Event"
+    icon: mdi:message-text-outline
+  reset_reason:
+    name: "BT Bridge Reset Reason"
+    icon: mdi:restart-alert
+  device:
+    name: "BT Bridge Discovered Device"
+    icon: mdi:bluetooth
+  current_speaker:
+    name: "BT Bridge Current Speaker"
+    icon: mdi:speaker-wireless
+  devices:
+    - text_sensor:
+        name: "BT Speaker Slot 1"
+        icon: mdi:speaker
+    - text_sensor:
+        name: "BT Speaker Slot 2"
+        icon: mdi:speaker
+    - text_sensor:
+        name: "BT Speaker Slot 3"
+        icon: mdi:speaker
+
+sensor:
+  - platform: wifi_signal
+    name: "BT Bridge WiFi RSSI"
+    update_interval: 30s
+
+  - platform: uptime
+    name: "BT Bridge Uptime"
+    update_interval: 30s
+
+button:
+  - platform: restart
+    name: "BT Bridge Restart"
