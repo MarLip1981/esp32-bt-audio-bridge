@@ -213,16 +213,25 @@ void BtAudioBridge::on_battery_status(esp_avrc_batt_stat_t status) {
 }
 
 int32_t BtAudioBridge::engine_audio_callback_(uint8_t *data, int32_t len) {
-  if (global_bt_audio_bridge == nullptr) { std::memset(data, 0, len); return len; }
-  if (!global_bt_audio_bridge->engine_test_active_) {
-    std::memset(data, 0, static_cast<size_t>(len));
-    return len;
-  }
+  if (data == nullptr || len <= 0 || global_bt_audio_bridge == nullptr) return 0;
+
+  BtAudioBridge *bridge = global_bt_audio_bridge;
+
+  // Never feed synthetic silence while the HA speaker entity is stopped.
+  // Returning zero prevents the A2DP source from entering its media-send path
+  // merely because the Bluetooth link is connected.
+  if (!bridge->engine_test_active_ || !bridge->speaker_started_) return 0;
+
+  // Do not start another SBC packet when the PCM ring buffer is empty.
+  // The previous implementation returned a full silent buffer here, which
+  // kept the media path active permanently and amplified heap fragmentation.
+  if (bridge->audio_engine_.available() == 0) return 0;
+
   const size_t requested = static_cast<size_t>(len);
-  const size_t received = global_bt_audio_bridge->audio_engine_.read(data, requested);
-  if (received > 0 && global_bt_audio_bridge->speaker_started_) {
-    const uint32_t frames = global_bt_audio_bridge->get_audio_stream_info().bytes_to_frames(received);
-    global_bt_audio_bridge->audio_output_callback_(frames, esp_timer_get_time());
+  const size_t received = bridge->audio_engine_.read(data, requested);
+  if (received > 0 && bridge->speaker_started_) {
+    const uint32_t frames = bridge->get_audio_stream_info().bytes_to_frames(received);
+    bridge->audio_output_callback_(frames, esp_timer_get_time());
   }
   return static_cast<int32_t>(received);
 }
@@ -351,7 +360,7 @@ void BtAudioBridge::dump_config() {
   ESP_LOGCONFIG(TAG, "  Mode: A2DP Source");
   ESP_LOGCONFIG(TAG, "  Auto reconnect: enabled");
   ESP_LOGCONFIG(TAG, "  Startup saved-speaker reconnect: enabled");
-  ESP_LOGCONFIG(TAG, "  Audio engine callback: permanent");
+  ESP_LOGCONFIG(TAG, "  Audio engine callback: idle-safe (no synthetic silence)");
   ESP_LOGCONFIG(TAG, "  HA speaker output: enabled");
   ESP_LOGCONFIG(TAG, "  HA scan slots: %u", static_cast<unsigned>(this->device_slot_count_));
 }
