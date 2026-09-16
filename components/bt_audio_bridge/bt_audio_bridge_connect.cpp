@@ -40,8 +40,6 @@ void BtAudioBridge::disconnect() {
   this->scan_requested_ = false;
   this->connected_ = false;
   this->engine_test_active_ = false;
-  this->speaker_started_ = false;
-  this->finish_requested_ = false;
   this->audio_engine_.clear();
   this->audio_engine_.end();
 
@@ -69,8 +67,6 @@ void BtAudioBridge::forget_speaker() {
   this->connected_ = false;
   this->scanning_ = false;
   this->engine_test_active_ = false;
-  this->speaker_started_ = false;
-  this->finish_requested_ = false;
   this->audio_engine_.clear();
   this->audio_engine_.end();
   if (this->device_sensor_ != nullptr) this->device_sensor_->publish_state("NONE");
