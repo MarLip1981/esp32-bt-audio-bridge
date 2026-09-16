@@ -3,7 +3,6 @@ idf_component_register(
         "bt_audio_bridge.cpp"
         "bt_audio_bridge_connect.cpp"
         "bt_audio_engine.cpp"
-        "bt_audio_speaker.cpp"
     INCLUDE_DIRS
         "."
     REQUIRES
