@@ -23,18 +23,13 @@ class BtAudioBridgeA2DPSource : public BluetoothA2DPSource {
   }
 
  protected:
-  // The upstream ESP32-A2DP Source starts the media timer from its 10 s
-  // heartbeat once a speaker is connected. In our bridge that is the wrong
-  // lifecycle: there may be no PCM waiting yet, and Bluedroid allocates a
-  // ~4 KiB SBC TX packet on every media tick before asking our callback for
-  // data. On an ESP32-WROOM this fragments the small remaining heap and causes
-  // the exact 4112-byte malloc failures seen in our logs.
-  //
-  // Keep the A2DP connection alive but suppress that idle media-start check.
-  // When real audio is queued, the future audio ingress path will explicitly
-  // issue ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY to start transmission.
+  // ESP32-A2DP keeps a private heartbeat event (0xff00) that is not exposed
+  // by its public header. Do not let the heartbeat start A2DP media while the
+  // bridge has no PCM queued; this is what caused the idle 4 KiB SBC allocation
+  // failures on the ESP32-WROOM during the earlier tests.
   void bt_app_av_state_connected_hdlr(uint16_t event, void *param) override {
-    if (event == BT_APP_HEART_BEAT_EVT) return;
+    constexpr uint16_t kA2dpHeartbeatEvent = 0xff00;
+    if (event == kA2dpHeartbeatEvent) return;
     BluetoothA2DPSource::bt_app_av_state_connected_hdlr(event, param);
   }
 
