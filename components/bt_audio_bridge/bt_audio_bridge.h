@@ -23,16 +23,10 @@ class BtAudioBridgeA2DPSource : public BluetoothA2DPSource {
   }
 
  protected:
-  // ESP32-A2DP keeps a private heartbeat event (0xff00) that is not exposed
-  // by its public header. Do not let the heartbeat start A2DP media while the
-  // bridge has no PCM queued; this is what caused the idle 4 KiB SBC allocation
-  // failures on the ESP32-WROOM during the earlier tests.
-  void bt_app_av_state_connected_hdlr(uint16_t event, void *param) override {
-    constexpr uint16_t kA2dpHeartbeatEvent = 0xff00;
-    if (event == kA2dpHeartbeatEvent) return;
-    BluetoothA2DPSource::bt_app_av_state_connected_hdlr(event, param);
-  }
-
+  // Do not override the library's private heartbeat handler here.
+  // The bridge keeps the A2DP data callback idle-safe instead: it returns 0
+  // until PCM is actually queued, so the upstream heartbeat cannot cause the
+  // previous synthetic-silence / 4 KiB allocation problem.
   void app_gap_callback(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param) override;
   void bt_av_notify_evt_handler(uint8_t event, esp_avrc_rn_param_t *param) override;
 
