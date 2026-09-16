@@ -215,14 +215,10 @@ void BtAudioBridge::on_battery_status(esp_avrc_batt_stat_t status) {
 int32_t BtAudioBridge::engine_audio_callback_(uint8_t *data, int32_t len) {
   if (data == nullptr || len <= 0 || global_bt_audio_bridge == nullptr) return 0;
   BtAudioBridge *bridge = global_bt_audio_bridge;
-  if (!bridge->engine_test_active_ || !bridge->speaker_started_) return 0;
+  if (!bridge->engine_test_active_) return 0;
   if (bridge->audio_engine_.available() == 0) return 0;
   const size_t requested = static_cast<size_t>(len);
   const size_t received = bridge->audio_engine_.read(data, requested);
-  if (received > 0 && bridge->speaker_started_) {
-    const uint32_t frames = bridge->get_audio_stream_info().bytes_to_frames(received);
-    bridge->audio_output_callback_(frames, esp_timer_get_time());
-  }
   return static_cast<int32_t>(received);
 }
 
@@ -246,8 +242,6 @@ void BtAudioBridge::setup() {
   this->last_status_check_ = millis();
   this->last_rssi_request_ = 0;
   this->engine_test_active_ = false;
-  this->speaker_started_ = false;
-  this->finish_requested_ = false;
   this->last_published_status_[0] = '\0';
   this->last_published_device_[0] = '\0';
   std::strncpy(this->status_, this->auto_connect_pending_ ? "CONNECTING" : "READY", sizeof(this->status_) - 1);
@@ -344,7 +338,7 @@ void BtAudioBridge::dump_config() {
   ESP_LOGCONFIG(TAG, "  Auto reconnect: enabled");
   ESP_LOGCONFIG(TAG, "  Startup saved-speaker reconnect: enabled");
   ESP_LOGCONFIG(TAG, "  Audio engine callback: idle-safe (no synthetic silence)");
-  ESP_LOGCONFIG(TAG, "  HA speaker output: enabled");
+  ESP_LOGCONFIG(TAG, "  HA audio output: not enabled yet");
   ESP_LOGCONFIG(TAG, "  HA scan slots: %u", static_cast<unsigned>(this->device_slot_count_));
 }
 
