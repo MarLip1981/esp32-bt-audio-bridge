@@ -162,7 +162,7 @@ void BtAudioBridge::save_speaker_() {
 }
 
 void BtAudioBridge::sync_current_speaker_() {
-  if (!this->a2dp_started_ || !this->a2dp_source_.is_active()) return;
+  if (!this->a2dp_started_ || !this->a2dp_source_.is_connected()) return;
   esp_bd_addr_t *address = this->a2dp_source_.get_last_peer_address();
   if (address == nullptr) return;
   bool zero = true;
@@ -214,19 +214,9 @@ void BtAudioBridge::on_battery_status(esp_avrc_batt_stat_t status) {
 
 int32_t BtAudioBridge::engine_audio_callback_(uint8_t *data, int32_t len) {
   if (data == nullptr || len <= 0 || global_bt_audio_bridge == nullptr) return 0;
-
   BtAudioBridge *bridge = global_bt_audio_bridge;
-
-  // Never feed synthetic silence while the HA speaker entity is stopped.
-  // Returning zero prevents the A2DP source from entering its media-send path
-  // merely because the Bluetooth link is connected.
   if (!bridge->engine_test_active_ || !bridge->speaker_started_) return 0;
-
-  // Do not start another SBC packet when the PCM ring buffer is empty.
-  // The previous implementation returned a full silent buffer here, which
-  // kept the media path active permanently and amplified heap fragmentation.
   if (bridge->audio_engine_.available() == 0) return 0;
-
   const size_t requested = static_cast<size_t>(len);
   const size_t received = bridge->audio_engine_.read(data, requested);
   if (received > 0 && bridge->speaker_started_) {
@@ -273,7 +263,6 @@ void BtAudioBridge::setup() {
     this->last_published_device_[sizeof(this->last_published_device_) - 1] = '\0';
   }
   for (size_t i = 0; i < this->device_slot_count_; i++) this->publish_device_(i);
-
   if (this->auto_connect_pending_) {
     this->start_a2dp_();
     if (this->a2dp_started_) {
@@ -285,14 +274,12 @@ void BtAudioBridge::setup() {
 
 void BtAudioBridge::loop() {
   const unsigned long now = millis();
-
   if (this->scan_requested_ && !this->a2dp_started_) {
     this->scan_requested_ = false;
     this->auto_connect_pending_ = false;
     this->scanning_ = true;
     this->start_a2dp_();
   }
-
   if (this->auto_connect_pending_ && !this->a2dp_started_) {
     this->start_a2dp_();
     if (this->a2dp_started_) {
@@ -302,9 +289,8 @@ void BtAudioBridge::loop() {
       this->publish_event_("BOOT: Bluetooth stack started");
     }
   }
-
   if (this->auto_connect_pending_ && this->a2dp_started_) {
-    if (this->a2dp_source_.is_active()) {
+    if (this->a2dp_source_.is_connected()) {
       this->auto_connect_pending_ = false;
     } else if (now - this->auto_connect_started_ >= 1500) {
       char mac[18];
@@ -315,17 +301,14 @@ void BtAudioBridge::loop() {
       this->publish_event_("BOOT: direct reconnect to saved speaker");
     }
   }
-
   if (this->devices_dirty_) {
     for (size_t i = 0; i < this->device_slot_count_; i++) this->publish_device_(i);
     this->devices_dirty_ = false;
   }
-
   if (now - this->last_status_check_ < 1000) return;
   this->last_status_check_ = now;
   if (!this->a2dp_started_) return;
-
-  const bool active = this->a2dp_source_.is_active();
+  const bool active = this->a2dp_source_.is_connected();
   if (active) {
     if (!this->connected_) {
       this->publish_event_("BT: speaker connected");
