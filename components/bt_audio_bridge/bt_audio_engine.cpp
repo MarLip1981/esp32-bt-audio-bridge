@@ -9,7 +9,7 @@ bool BtAudioEngine::begin() {
   if (this->buffer_ != nullptr) return true;
 
   this->buffer_ = xStreamBufferCreateStatic(
-      this->buffer_storage_, BUFFER_SIZE, TRIGGER_LEVEL, &this->static_buffer_);
+      BUFFER_SIZE, TRIGGER_LEVEL, this->buffer_storage_, &this->static_buffer_);
 
   if (this->buffer_ == nullptr) return false;
 
@@ -34,7 +34,6 @@ void BtAudioEngine::clear() {
 size_t BtAudioEngine::write(const uint8_t *data, size_t len) {
   if (this->buffer_ == nullptr || data == nullptr || len == 0) return 0;
 
-  // Never pass a larger block than the stream buffer can hold.
   const size_t max_write = BUFFER_SIZE - 1;
   const size_t request = (len > max_write) ? max_write : len;
 
