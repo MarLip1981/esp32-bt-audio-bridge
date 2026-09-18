@@ -321,6 +321,7 @@ void BtAudioBridge::loop() {
   if (this->finish_requested_ && this->speaker_started_ && this->audio_engine_.available() == 0) {
     this->speaker_started_ = false;
     this->finish_requested_ = false;
+    this->a2dp_source_.set_media_enabled(false);
     this->state_ = speaker::STATE_STOPPED;
     ESP_LOGI(TAG, "HA audio stream FINISHED");
   }
