@@ -752,11 +752,15 @@ void BluetoothA2DPSource::bt_app_av_state_connecting_hdlr(uint16_t event,
       // if we got here -> we must be still connected
       // This is called when we request to reconnect
       s_a2d_state = APP_AV_STATE_CONNECTED;
-      esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY);
+      if (this->media_enabled_) {
+        esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY);
+      }
       break;
     case BT_APP_HEART_BEAT_EVT:
-      // we might be still active
-      esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY);
+      // Keep the A2DP link alive without starting media TX while idle.
+      if (this->media_enabled_) {
+        esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY);
+      }
       /**
        * Switch state to APP_AV_STATE_UNCONNECTED
        * when connecting lasts more than 2 heart beat intervals.
@@ -812,7 +816,7 @@ void BluetoothA2DPSource::bt_app_av_state_connected_hdlr(uint16_t event,
       break;
     }
     case BT_APP_HEART_BEAT_EVT: {
-      if (s_media_state == APP_AV_MEDIA_STATE_IDLE) {
+      if (this->media_enabled_ && s_media_state == APP_AV_MEDIA_STATE_IDLE) {
         ESP_LOGI(BT_AV_TAG, "a2dp media ready checking ...");
         esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY);
       }
