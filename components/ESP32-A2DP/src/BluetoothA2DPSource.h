@@ -159,7 +159,9 @@ class BluetoothA2DPSource : public BluetoothA2DPCommon {
   }
   void end(bool releaseMemory = false) override;
   unsigned long get_last_heart_beat() { return last_heart_beat; }
-  bool is_active(unsigned long timeout = 10000);\n\n  // Keep the A2DP connection alive without running the media TX timer.\n  void set_media_enabled(bool enabled);
+  bool is_active(unsigned long timeout = 10000);
+
+  // Keep the A2DP connection alive without running the media TX timer.\n  void set_media_enabled(bool enabled);
 
  protected:
   int32_t (*get_data_cb)(uint8_t* data, int32_t len) = nullptr;
