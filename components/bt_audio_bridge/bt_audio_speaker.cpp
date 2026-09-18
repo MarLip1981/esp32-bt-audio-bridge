@@ -22,7 +22,8 @@ void BtAudioBridge::start() {
 
   this->audio_engine_.clear();
   this->finish_requested_ = false;
-  this->speaker_started_ = true;\n  this->a2dp_source_.set_media_enabled(true);
+  this->speaker_started_ = true;
+  this->a2dp_source_.set_media_enabled(true);
   this->engine_test_active_ = false;
   this->state_ = speaker::STATE_RUNNING;
   ESP_LOGI(SPEAKER_TAG, "HA audio stream START");
@@ -30,7 +31,8 @@ void BtAudioBridge::start() {
 
 void BtAudioBridge::stop() {
   this->finish_requested_ = false;
-  this->speaker_started_ = false;\n    this->a2dp_source_.set_media_enabled(false);\n  this->a2dp_source_.set_media_enabled(false);
+  this->speaker_started_ = false;
+  this->a2dp_source_.set_media_enabled(false);
   this->engine_test_active_ = false;
   this->audio_engine_.clear();
   this->state_ = speaker::STATE_STOPPED;
@@ -42,6 +44,7 @@ void BtAudioBridge::finish() {
 
   if (this->audio_engine_.available() == 0) {
     this->speaker_started_ = false;
+    this->a2dp_source_.set_media_enabled(false);
     this->finish_requested_ = false;
     this->state_ = speaker::STATE_STOPPED;
     ESP_LOGI(SPEAKER_TAG, "HA audio stream FINISHED");
