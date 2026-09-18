@@ -5,7 +5,7 @@ esphome:
 esp32:
   variant: esp32
   framework:
-    type: arduino
+    type: esp-idf
 
 external_components:
   - source: github://MarLip1981/esp32-bt-audio-bridge
@@ -28,6 +28,13 @@ wifi:
 
 bt_audio_bridge:
   id: bt_audio_bridge_id
+
+  # Format przyjmowany przez tor A2DP:
+  # PCM 44.1 kHz / 16 bit / stereo.
+  bits_per_sample: 16
+  num_channels: 2
+  sample_rate: 44100
+
   status:
     name: "Bluetooth Status"
   event:
@@ -40,6 +47,7 @@ bt_audio_bridge:
     name: "Bluetooth RSSI"
   battery:
     name: "Bluetooth Battery Status"
+
   devices:
     - text_sensor:
         name: "Bluetooth Device 1"
@@ -47,6 +55,53 @@ bt_audio_bridge:
         name: "Bluetooth Device 2"
     - text_sensor:
         name: "Bluetooth Device 3"
+
+  diagnostics:
+    heap_free:
+      name: "RAM Free"
+    heap_largest_block:
+      name: "RAM Largest Block"
+    bt_status:
+      name: "BT Status"
+    bt_connections:
+      name: "BT Connections"
+    bt_reconnects:
+      name: "BT Reconnects"
+    cpu_load:
+      name: "CPU Load"
+
+# ============================================================================
+# HOME ASSISTANT -> ESP32 -> BT
+# ============================================================================
+# ESPHome's native speaker media_player works on ESP-IDF and forwards
+# the decoded PCM directly into bt_audio_bridge.
+#
+# Home Assistant transcodes the requested media to WAV 44.1 kHz / stereo /
+# 16-bit, which keeps the classic ESP32 decoder side as light as possible.
+media_player:
+  - platform: speaker
+    name: "BT Audio Bridge"
+    id: bt_media_player
+
+    volume_increment: 0.05
+    volume_initial: 0.8
+    volume_min: 0.0
+    volume_max: 1.0
+
+    # Keep RAM usage under control on ESP32-WROOM-32.
+    buffer_size: 8000
+
+    # One pipeline = lower RAM usage. With a single pipeline ESPHome uses
+    # it as the default playback path for Home Assistant media.
+    announcement_pipeline:
+      speaker: bt_audio_bridge_id
+      format: WAV
+      num_channels: 2
+      sample_rate: 44100
+
+# ============================================================================
+# BLUETOOTH CONTROL
+# ============================================================================
 
 button:
   - platform: template
