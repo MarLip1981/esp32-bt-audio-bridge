@@ -218,79 +218,19 @@ int32_t BtAudioBridge::engine_audio_callback_(uint8_t *data, int32_t len) {
     return len;
   }
 
-  // A2DP asks for PCM from its own BT task. The ESPHome speaker pipeline
-  // writes PCM into BtAudioEngine::buffer_ from the media task.
-  // Do not gate this on the old test flag: this is the real HA audio path.
+  // This callback runs from the A2DP/BT audio task. Keep it strictly real-time:
+  // only copy PCM from the lock-free stream buffer and never call ESPHome
+  // speaker callbacks, logging, allocation, or other potentially blocking code.
   const size_t requested = static_cast<size_t>(len);
   const size_t received = global_bt_audio_bridge->speaker_started_
                               ? global_bt_audio_bridge->audio_engine_.read(data, requested)
                               : 0;
 
-  if (received == 0) {
-    std::memset(data, 0, requested);
-    return len;
-  }
-
-  if (global_bt_audio_bridge->speaker_started_) {
-    const uint32_t frames = global_bt_audio_bridge->get_audio_stream_info().bytes_to_frames(received);
-    global_bt_audio_bridge->audio_output_callback_(frames, esp_timer_get_time());
+  if (received < requested) {
+    std::memset(data + received, 0, requested - received);
   }
 
   return static_cast<int32_t>(requested);
-}
-
-size_t BtAudioBridge::play(const uint8_t *data, size_t length) {
-  if (data == nullptr || length == 0) return 0;
-  if (!this->audio_engine_.begin()) {
-    ESP_LOGE(TAG, "Audio engine buffer allocation failed");
-    return 0;
-  }
-
-  this->finish_requested_ = false;
-  const size_t written = this->audio_engine_.write(data, length);
-  if (written < length) {
-    ESP_LOGW(TAG, "Audio buffer full: accepted %u/%u bytes",
-             static_cast<unsigned>(written), static_cast<unsigned>(length));
-  }
-  return written;
-}
-
-void BtAudioBridge::start() {
-  if (!this->audio_engine_.begin()) {
-    ESP_LOGE(TAG, "Audio engine start failed: no RAM for PCM buffer");
-    this->state_ = speaker::STATE_STOPPED;
-    return;
-  }
-
-  this->audio_engine_.clear();
-  this->finish_requested_ = false;
-  this->speaker_started_ = true;
-  this->engine_test_active_ = false;
-  this->state_ = speaker::STATE_RUNNING;
-  ESP_LOGI(TAG, "HA audio stream START");
-}
-
-void BtAudioBridge::stop() {
-  this->finish_requested_ = false;
-  this->speaker_started_ = false;
-  this->audio_engine_.clear();
-  this->state_ = speaker::STATE_STOPPED;
-  ESP_LOGI(TAG, "HA audio stream STOP");
-}
-
-void BtAudioBridge::finish() {
-  // Keep the stream alive until the BT consumer has drained the PCM buffer.
-  this->finish_requested_ = true;
-  if (this->audio_engine_.available() == 0) {
-    this->speaker_started_ = false;
-    this->state_ = speaker::STATE_STOPPED;
-  } else {
-    this->state_ = speaker::STATE_STOPPING;
-  }
-}
-
-bool BtAudioBridge::has_buffered_data() const {
-  return this->audio_engine_.available() > 0;
 }
 
 void BtAudioBridge::setup() {
