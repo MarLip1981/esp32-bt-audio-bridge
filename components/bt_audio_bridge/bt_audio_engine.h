@@ -11,9 +11,10 @@ namespace bt_audio_bridge {
 
 class BtAudioEngine {
  public:
-  // Keep the PCM buffer small so the Classic BT stack can obtain its contiguous
-  // A2DP TX buffers (~4 KiB) on the ESP32. This is ~23 ms at 44.1 kHz/stereo.
-  static constexpr size_t BUFFER_SIZE = 4 * 1024;
+  // Static PCM buffer: avoids a ~4 KiB heap allocation and leaves the
+  // Classic BT stack enough contiguous heap for A2DP/SBC TX buffers.
+  // 2048 bytes is ~11.6 ms at 44.1 kHz stereo / 16-bit.
+  static constexpr size_t BUFFER_SIZE = 2048;
   static constexpr size_t TRIGGER_LEVEL = 1;
 
   bool begin();
@@ -21,6 +22,8 @@ class BtAudioEngine {
   void clear();
 
   // Non-blocking producer/consumer operations.
+  // The write path is deliberately capped so FreeRTOS never receives a
+  // request larger than the stream buffer can hold.
   size_t write(const uint8_t *data, size_t len);
   size_t read(uint8_t *data, size_t len);
 
@@ -35,6 +38,9 @@ class BtAudioEngine {
 
  private:
   StreamBufferHandle_t buffer_{nullptr};
+  StaticStreamBuffer_t static_buffer_{};
+  uint8_t buffer_storage_[BUFFER_SIZE + 1]{};
+
   volatile uint32_t underruns_{0};
   volatile uint32_t overruns_{0};
   volatile uint32_t bytes_written_{0};
