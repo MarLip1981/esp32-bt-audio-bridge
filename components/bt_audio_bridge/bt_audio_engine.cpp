@@ -8,7 +8,9 @@ namespace bt_audio_bridge {
 bool BtAudioEngine::begin() {
   if (this->buffer_ != nullptr) return true;
 
-  this->buffer_ = xStreamBufferCreate(BUFFER_SIZE, TRIGGER_LEVEL);
+  this->buffer_ = xStreamBufferCreateStatic(
+      this->buffer_storage_, BUFFER_SIZE, TRIGGER_LEVEL, &this->static_buffer_);
+
   if (this->buffer_ == nullptr) return false;
 
   this->underruns_ = 0;
@@ -19,10 +21,8 @@ bool BtAudioEngine::begin() {
 }
 
 void BtAudioEngine::end() {
-  if (this->buffer_ != nullptr) {
-    vStreamBufferDelete(this->buffer_);
-    this->buffer_ = nullptr;
-  }
+  // Static stream buffer: nothing to free.
+  this->buffer_ = nullptr;
 }
 
 void BtAudioEngine::clear() {
@@ -34,7 +34,11 @@ void BtAudioEngine::clear() {
 size_t BtAudioEngine::write(const uint8_t *data, size_t len) {
   if (this->buffer_ == nullptr || data == nullptr || len == 0) return 0;
 
-  const size_t written = xStreamBufferSend(this->buffer_, data, len, 0);
+  // Never pass a larger block than the stream buffer can hold.
+  const size_t max_write = BUFFER_SIZE - 1;
+  const size_t request = (len > max_write) ? max_write : len;
+
+  const size_t written = xStreamBufferSend(this->buffer_, data, request, 0);
   this->bytes_written_ += static_cast<uint32_t>(written);
 
   if (written < len) this->overruns_++;
