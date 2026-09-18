@@ -398,7 +398,7 @@ void BluetoothA2DPSource::app_gap_callback(esp_bt_gap_cb_event_t event,
           if (!is_end){
             ESP_LOGI(BT_AV_TAG,
                     "Device discovery failed, continue to discover...");
-            esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, 10, 0);
+            esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, 10, 8);
           }
         }
       } else if (param->disc_st_chg.state == ESP_BT_GAP_DISCOVERY_STARTED) {
@@ -562,7 +562,7 @@ void BluetoothA2DPSource::av_hdl_stack_evt(uint16_t event, void *p_param) {
       } else {
         ESP_LOGI(BT_AV_TAG, "Starting device discovery...");
         s_a2d_state = APP_AV_STATE_DISCOVERING;
-        esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, 10, 0);
+        esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, 10, 8);
       }
       // create and start heart beat timer
       int tmr_id = 0;
@@ -719,7 +719,7 @@ bool BluetoothA2DPSource::handle_reconnect_logic() {
     reconnect_status = NoReconnect;
     reconnect_retries = max_reconnect_retries;
     s_a2d_state = APP_AV_STATE_DISCOVERING;
-    esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, 10, 0);
+    esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, 10, 8);
     return false;
   }
   return false;
