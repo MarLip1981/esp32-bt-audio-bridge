@@ -214,17 +214,22 @@ void BtAudioBridge::on_battery_status(esp_avrc_batt_stat_t status) {
 
 int32_t BtAudioBridge::engine_audio_callback_(uint8_t *data, int32_t len) {
   if (global_bt_audio_bridge == nullptr || data == nullptr || len <= 0) {
-    if (data != nullptr && len > 0) std::memset(data, 0, static_cast<size_t>(len));
-    return len;
+    return 0;
   }
 
   // This callback runs from the A2DP/BT audio task. Keep it strictly real-time:
   // only copy PCM from the lock-free stream buffer and never call ESPHome
   // speaker callbacks, logging, allocation, or other potentially blocking code.
+  //
+  // IMPORTANT: returning a full buffer while HA is not playing would make the
+  // A2DP source continuously transmit silence immediately after connection.
+  // That can fill the BT/L2CAP TX path even though the HA media player is idle.
+  if (!global_bt_audio_bridge->speaker_started_) {
+    return 0;
+  }
+
   const size_t requested = static_cast<size_t>(len);
-  const size_t received = global_bt_audio_bridge->speaker_started_
-                              ? global_bt_audio_bridge->audio_engine_.read(data, requested)
-                              : 0;
+  const size_t received = global_bt_audio_bridge->audio_engine_.read(data, requested);
 
   if (received < requested) {
     std::memset(data + received, 0, requested - received);
