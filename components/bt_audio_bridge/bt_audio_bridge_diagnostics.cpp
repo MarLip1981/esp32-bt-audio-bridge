@@ -21,7 +21,7 @@ namespace esphome {
 namespace bt_audio_bridge {
 
 static const char *const TAG = "bt_audio_diag";
-static constexpr uint32_t UPDATE_INTERVAL_MS = 5000;
+static constexpr uint32_t UPDATE_INTERVAL_MS = 15000;
 
 static const char *bt_controller_status_text(esp_bt_controller_status_t status) {
   switch (status) {
