@@ -9,6 +9,7 @@ static const char *const SPEAKER_TAG = "bt_audio_bridge.speaker";
 
 void BtAudioBridge::start() {
   if (!this->a2dp_started_ || !this->a2dp_source_.is_active()) {
+    ESP_LOGW(SPEAKER_TAG, "Cannot start HA audio: Bluetooth speaker is not active");
     this->state_ = speaker::STATE_STOPPED;
     return;
   }
@@ -21,29 +22,32 @@ void BtAudioBridge::start() {
 
   this->audio_engine_.clear();
   this->finish_requested_ = false;
-  this->engine_test_active_ = true;
   this->speaker_started_ = true;
+  this->engine_test_active_ = false;
   this->state_ = speaker::STATE_RUNNING;
+  ESP_LOGI(SPEAKER_TAG, "HA audio stream START");
 }
 
 void BtAudioBridge::stop() {
-  this->engine_test_active_ = false;
   this->finish_requested_ = false;
   this->speaker_started_ = false;
+  this->engine_test_active_ = false;
   this->audio_engine_.clear();
-  this->audio_engine_.end();
   this->state_ = speaker::STATE_STOPPED;
+  ESP_LOGI(SPEAKER_TAG, "HA audio stream STOP");
 }
 
 void BtAudioBridge::finish() {
-  if (!this->speaker_started_) {
-    this->state_ = speaker::STATE_STOPPED;
-    this->audio_engine_.end();
-    return;
-  }
-
   this->finish_requested_ = true;
-  this->state_ = speaker::STATE_STOPPING;
+
+  if (this->audio_engine_.available() == 0) {
+    this->speaker_started_ = false;
+    this->finish_requested_ = false;
+    this->state_ = speaker::STATE_STOPPED;
+    ESP_LOGI(SPEAKER_TAG, "HA audio stream FINISHED");
+  } else {
+    this->state_ = speaker::STATE_STOPPING;
+  }
 }
 
 size_t BtAudioBridge::play(const uint8_t *data, size_t length) {
@@ -55,23 +59,12 @@ size_t BtAudioBridge::play(const uint8_t *data, size_t length) {
 
   if (!this->speaker_started_) return 0;
 
-  return this->audio_engine_.write(data, length);
+  const size_t written = this->audio_engine_.write(data, length);
+  return written;
 }
 
 bool BtAudioBridge::has_buffered_data() const {
-  const bool buffered = this->audio_engine_.available() != 0;
-
-  if (!buffered && this->finish_requested_) {
-    auto *self = const_cast<BtAudioBridge *>(this);
-    self->engine_test_active_ = false;
-    self->speaker_started_ = false;
-    self->finish_requested_ = false;
-    self->audio_engine_.clear();
-    self->audio_engine_.end();
-    self->state_ = speaker::STATE_STOPPED;
-  }
-
-  return buffered;
+  return this->audio_engine_.available() != 0;
 }
 
 }  // namespace bt_audio_bridge
