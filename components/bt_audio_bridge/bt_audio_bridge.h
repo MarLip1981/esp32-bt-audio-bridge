@@ -19,7 +19,7 @@ extern BtAudioBridge *global_bt_audio_bridge;
 class BtAudioBridgeA2DPSource : public BluetoothA2DPSource {
  public:
   explicit BtAudioBridgeA2DPSource(BtAudioBridge *owner) : owner_(owner) {
-    this->set_event_stack_size(2048);
+    this->set_event_stack_size(4096);
     this->set_event_queue_size(10);
   }
 
