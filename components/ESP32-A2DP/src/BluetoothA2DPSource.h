@@ -196,7 +196,8 @@ class BluetoothA2DPSource : public BluetoothA2DPCommon {
       nullptr;
   void (*passthru_command_callback)(uint8_t, bool) = nullptr;
   bool is_passthru_active = false;
-  bool is_end = false;\n  bool media_enabled_ = false;
+  bool is_end = false;
+  bool media_enabled_ = false;
   int reconnect_retries = 0;
   int max_reconnect_retries = 0;
   unsigned long last_heart_beat = 0;
