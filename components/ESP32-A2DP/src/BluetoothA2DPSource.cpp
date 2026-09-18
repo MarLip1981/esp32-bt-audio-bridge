@@ -1101,7 +1101,19 @@ void BluetoothA2DPSource::bt_av_hdl_avrc_ct_evt(uint16_t event, void *p_param) {
 
 void BluetoothA2DPSource::set_reset_ble(bool doInit) { reset_ble = doInit; }
 
-void BluetoothA2DPSource::set_media_enabled(bool enabled) {\n  this->media_enabled_ = enabled;\n  if (enabled) {\n    if (s_a2d_state == APP_AV_STATE_CONNECTED) {\n      esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY);\n    }\n  } else {\n    if (s_media_state == APP_AV_MEDIA_STATE_STARTED ||\n        s_media_state == APP_AV_MEDIA_STATE_STARTING) {\n      esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_SUSPEND);\n    }\n  }\n}
+void BluetoothA2DPSource::set_media_enabled(bool enabled) {
+  this->media_enabled_ = enabled;
+  if (enabled) {
+    if (s_a2d_state == APP_AV_STATE_CONNECTED) {
+      esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY);
+    }
+  } else {
+    if (s_media_state == APP_AV_MEDIA_STATE_STARTED ||
+        s_media_state == APP_AV_MEDIA_STATE_STARTING) {
+      esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_SUSPEND);
+    }
+  }
+}
 
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(4, 0, 0)
 
