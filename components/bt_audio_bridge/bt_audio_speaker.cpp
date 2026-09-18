@@ -56,14 +56,23 @@ void BtAudioBridge::finish() {
 size_t BtAudioBridge::play(const uint8_t *data, size_t length) {
   if (data == nullptr || length == 0) return 0;
 
+  // AudioPipeline may still deliver buffered decoder data after Bluetooth
+  // disconnects. Do not repeatedly call start() in that state: start() logs
+  // on every rejected buffer and can flood the UART/logger task badly enough
+  // to trigger the Task WDT.
+  if (!this->a2dp_started_ || !this->a2dp_source_.is_active()) {
+    this->speaker_started_ = false;
+    this->state_ = speaker::STATE_STOPPED;
+    return 0;
+  }
+
   if (!this->speaker_started_ || this->state_ == speaker::STATE_STOPPED) {
     this->start();
   }
 
   if (!this->speaker_started_) return 0;
 
-  const size_t written = this->audio_engine_.write(data, length);
-  return written;
+  return this->audio_engine_.write(data, length);
 }
 
 bool BtAudioBridge::has_buffered_data() const {
