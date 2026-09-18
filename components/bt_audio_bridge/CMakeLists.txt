@@ -8,8 +8,8 @@ idf_component_register(
         "."
     REQUIRES
         bt
-)
-
-target_compile_definitions(${COMPONENT_LIB} PRIVATE
-    A2DP_FORCE_ARDUINO_LAYOUT=1
+        nvs_flash
+        esp_timer
+        esp_wifi
+        esp_netif
 )
