@@ -8,7 +8,7 @@ namespace bt_audio_bridge {
 static const char *const SPEAKER_TAG = "bt_audio_bridge.speaker";
 
 void BtAudioBridge::start() {
-  if (!this->a2dp_started_ || !this->a2dp_source_.is_active()) {
+  if (!this->a2dp_started_ || !this->a2dp_source_.is_connected()) {
     ESP_LOGW(SPEAKER_TAG, "Cannot start HA audio: Bluetooth speaker is not active");
     this->state_ = speaker::STATE_STOPPED;
     return;
@@ -60,7 +60,7 @@ size_t BtAudioBridge::play(const uint8_t *data, size_t length) {
   // disconnects. Do not repeatedly call start() in that state: start() logs
   // on every rejected buffer and can flood the UART/logger task badly enough
   // to trigger the Task WDT.
-  if (!this->a2dp_started_ || !this->a2dp_source_.is_active()) {
+  if (!this->a2dp_started_ || !this->a2dp_source_.is_connected()) {
     this->speaker_started_ = false;
     this->state_ = speaker::STATE_STOPPED;
     return 0;
