@@ -288,11 +288,27 @@ void BtAudioBridge::setup() {
 void BtAudioBridge::loop() {
   const unsigned long now = millis();
 
-  if (this->scan_requested_ && !this->a2dp_started_) {
+  if (this->scan_requested_) {
     this->scan_requested_ = false;
     this->auto_connect_pending_ = false;
+
+    // The A2DP stack may remain initialized after the speaker disconnects.
+    // In that state start_scan() must be able to reuse the scan button without
+    // pretending that the whole Bluetooth stack is already connected.
+    if (this->a2dp_started_ && !this->a2dp_source_.is_active()) {
+      this->publish_event_("SCAN: restarting idle A2DP stack");
+      this->a2dp_source_.end();
+      this->a2dp_started_ = false;
+    }
+
     this->scanning_ = true;
     this->start_a2dp_();
+    if (!this->a2dp_started_) {
+      this->scanning_ = false;
+      std::strncpy(this->status_, "DISCONNECTED", sizeof(this->status_) - 1);
+      this->publish_status_();
+      this->publish_event_("SCAN: failed to restart A2DP stack");
+    }
   }
 
   if (this->auto_connect_pending_ && !this->a2dp_started_) {
@@ -376,8 +392,10 @@ void BtAudioBridge::dump_config() {
 }
 
 void BtAudioBridge::start_scan() {
-  if (this->a2dp_started_) {
-    this->publish_event_("SCAN: rejected, A2DP already started");
+  // a2dp_started_ means that the Bluetooth stack is initialized, not that a
+  // speaker is actually connected. Allow a scan after a normal disconnect.
+  if (this->a2dp_started_ && this->a2dp_source_.is_active()) {
+    this->publish_event_("SCAN: rejected, speaker is currently connected");
     return;
   }
   this->auto_connect_pending_ = false;
