@@ -162,7 +162,7 @@ void BtAudioBridge::save_speaker_() {
 }
 
 void BtAudioBridge::sync_current_speaker_() {
-  if (!this->a2dp_started_ || !this->a2dp_source_.is_active()) return;
+  if (!this->a2dp_started_ || !this->a2dp_source_.is_connected()) return;
   esp_bd_addr_t *address = this->a2dp_source_.get_last_peer_address();
   if (address == nullptr) return;
   bool zero = true;
@@ -295,7 +295,7 @@ void BtAudioBridge::loop() {
     // The A2DP stack may remain initialized after the speaker disconnects.
     // In that state start_scan() must be able to reuse the scan button without
     // pretending that the whole Bluetooth stack is already connected.
-    if (this->a2dp_started_ && !this->a2dp_source_.is_active()) {
+    if (this->a2dp_started_ && !this->a2dp_source_.is_connected()) {
       this->publish_event_("SCAN: restarting idle A2DP stack");
       this->a2dp_source_.end();
       this->a2dp_started_ = false;
@@ -322,7 +322,7 @@ void BtAudioBridge::loop() {
   }
 
   if (this->auto_connect_pending_ && this->a2dp_started_) {
-    if (this->a2dp_source_.is_active()) {
+    if (this->a2dp_source_.is_connected()) {
       this->auto_connect_pending_ = false;
     } else if (now - this->auto_connect_started_ >= 1500) {
       char mac[18];
@@ -351,7 +351,7 @@ void BtAudioBridge::loop() {
   this->last_status_check_ = now;
   if (!this->a2dp_started_) return;
 
-  const bool active = this->a2dp_source_.is_active();
+  const bool active = this->a2dp_source_.is_connected();
   if (active) {
     if (!this->connected_) {
       this->publish_event_("BT: speaker connected");
@@ -394,7 +394,7 @@ void BtAudioBridge::dump_config() {
 void BtAudioBridge::start_scan() {
   // a2dp_started_ means that the Bluetooth stack is initialized, not that a
   // speaker is actually connected. Allow a scan after a normal disconnect.
-  if (this->a2dp_started_ && this->a2dp_source_.is_active()) {
+  if (this->a2dp_started_ && this->a2dp_source_.is_connected()) {
     this->publish_event_("SCAN: rejected, speaker is currently connected");
     return;
   }
