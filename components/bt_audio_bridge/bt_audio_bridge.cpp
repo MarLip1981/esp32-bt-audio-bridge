@@ -229,6 +229,17 @@ int32_t BtAudioBridge::engine_audio_callback_(uint8_t *data, int32_t len) {
   }
 
   const size_t requested = static_cast<size_t>(len);
+
+  // When HA has not supplied PCM yet, do not manufacture a full block of
+  // silence. Returning 0 is explicitly supported by the A2DP source callback
+  // as the effective amount of audio available. This keeps the BT stack from
+  // continuously preparing SBC/TX buffers while the ESPHome decoder is
+  // catching up, which is important on the 520 KB ESP32 where those buffers
+  // need several KiB of contiguous heap each.
+  if (global_bt_audio_bridge->audio_engine_.available() == 0) {
+    return 0;
+  }
+
   const size_t received = global_bt_audio_bridge->audio_engine_.read(data, requested);
 
   if (received < requested) {
