@@ -45,6 +45,9 @@ class BtAudioBridge : public Component, public speaker::Speaker {
   }
 
   size_t play(const uint8_t *data, size_t length) override;
+#ifdef USE_ESP32
+  size_t play(const uint8_t *data, size_t length, TickType_t ticks_to_wait) override;
+#endif
   void start() override;
   void stop() override;
   void finish() override;
