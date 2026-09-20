@@ -395,7 +395,7 @@ void BtAudioBridge::start_scan() {
   // a2dp_started_ means that the Bluetooth stack is initialized, not that a
   // speaker is actually connected. Allow a scan after a normal disconnect.
   if (this->a2dp_started_ && this->a2dp_source_.is_connected()) {
-    this->publish_event_("SCAN: rejected, speaker is currently connected");
+    this->publish_event_("STATEFIX-01: scan rejected, speaker is CONNECTED");
     return;
   }
   this->auto_connect_pending_ = false;
