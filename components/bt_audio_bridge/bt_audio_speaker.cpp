@@ -53,6 +53,26 @@ void BtAudioBridge::finish() {
   }
 }
 
+#ifdef USE_ESP32
+size_t BtAudioBridge::play(const uint8_t *data, size_t length, TickType_t ticks_to_wait) {
+  if (data == nullptr || length == 0) return 0;
+
+  if (!this->a2dp_started_ || !this->a2dp_source_.is_connected()) {
+    this->speaker_started_ = false;
+    this->state_ = speaker::STATE_STOPPED;
+    return 0;
+  }
+
+  if (!this->speaker_started_ || this->state_ == speaker::STATE_STOPPED) {
+    this->start();
+  }
+
+  if (!this->speaker_started_) return 0;
+
+  return this->audio_engine_.write(data, length, ticks_to_wait);
+}
+#endif
+
 size_t BtAudioBridge::play(const uint8_t *data, size_t length) {
   if (data == nullptr || length == 0) return 0;
 
