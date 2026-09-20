@@ -33,32 +33,36 @@ void BtAudioEngine::clear() {
   }
 }
 
-size_t BtAudioEngine::write(const uint8_t *data, size_t len) {
+size_t BtAudioEngine::write(const uint8_t *data, size_t len, TickType_t ticks_to_wait) {
   if (this->buffer_ == nullptr || data == nullptr || len == 0) return 0;
 
-  const size_t max_write = BUFFER_SIZE - 1;
-  const size_t request = (len > max_write) ? max_write : len;
+  size_t total_written = 0;
 
-  const size_t written = xStreamBufferSend(this->buffer_, data, request, 0);
-  this->bytes_written_ += static_cast<uint32_t>(written);
+  while (total_written < len) {
+    const size_t remaining = len - total_written;
+    const size_t chunk = (remaining > (BUFFER_SIZE - 1)) ? (BUFFER_SIZE - 1) : remaining;
 
-  if (written < len) {
-    this->overruns_++;
+    // Let the A2DP callback drain the PCM buffer instead of returning a
+    // partial write and making ESPHome's AudioPipeline immediately retry.
+    // This is the contract exposed by Speaker::play(..., ticks_to_wait).
+    TickType_t wait = ticks_to_wait;
+    if (wait == 0) {
+      wait = 1;
+    }
 
-    // ESPHome's AudioPipeline can immediately call Speaker::play() again
-    // when only part of a decoder block was accepted. Our buffer is
-    // intentionally non-blocking, so returning a partial write without
-    // yielding can make the decoder task spin on a full buffer and starve
-    // Core 1 long enough to trigger the Task WDT.
-    //
-    // One RTOS tick gives the A2DP consumer time to drain the buffer before
-    // AudioPipeline retries the remaining PCM. This is especially important
-    // when len > BUFFER_SIZE - 1, because the cap itself necessarily makes
-    // the write partial even when the buffer was otherwise empty.
-    vTaskDelay(1);
+    const size_t written = xStreamBufferSend(
+        this->buffer_, data + total_written, chunk, wait);
+
+    total_written += written;
+    this->bytes_written_ += static_cast<uint32_t>(written);
+
+    if (written < chunk) {
+      this->overruns_++;
+      break;
+    }
   }
 
-  return written;
+  return total_written;
 }
 
 size_t BtAudioEngine::read(uint8_t *data, size_t len) {
