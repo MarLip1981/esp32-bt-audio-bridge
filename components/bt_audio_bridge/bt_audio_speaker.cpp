@@ -23,7 +23,10 @@ void BtAudioBridge::start() {
   this->audio_engine_.clear();
   this->finish_requested_ = false;
   this->speaker_started_ = true;
-  this->a2dp_source_.set_media_enabled(true);
+  // Do not enable A2DP media until the first PCM bytes are actually queued.
+  // This prevents the BT stack from repeatedly allocating SBC TX buffers
+  // while HA is still preparing the decoder/TTS output.
+  this->a2dp_source_.set_media_enabled(false);
   this->engine_test_active_ = false;
   this->state_ = speaker::STATE_RUNNING;
   ESP_LOGI(SPEAKER_TAG, "HA audio stream START");
@@ -69,7 +72,14 @@ size_t BtAudioBridge::play(const uint8_t *data, size_t length, TickType_t ticks_
 
   if (!this->speaker_started_) return 0;
 
-  return this->audio_engine_.write(data, length, ticks_to_wait);
+  const size_t written = this->audio_engine_.write(data, length, ticks_to_wait);
+  if (written > 0) {
+    // Start the A2DP media path only after PCM is waiting in the buffer.
+    // The callback can then immediately provide real audio instead of
+    // repeatedly returning 0 while the SBC/TX path is being initialized.
+    this->a2dp_source_.set_media_enabled(true);
+  }
+  return written;
 }
 #endif
 
