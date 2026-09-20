@@ -45,12 +45,16 @@ size_t BtAudioEngine::write(const uint8_t *data, size_t len, TickType_t ticks_to
     // Let the A2DP callback drain the PCM buffer instead of returning a
     // partial write and making ESPHome's AudioPipeline immediately retry.
     // This is the contract exposed by Speaker::play(..., ticks_to_wait).
-    // Never inherit an unbounded Speaker timeout here. The A2DP callback and
-    // the ESPHome decoder run concurrently; holding the decoder task for an
-    // arbitrary timeout can keep large decoder/TTS buffers alive while the BT
-    // stack is trying to allocate SBC TX buffers. One tick is enough to yield
-    // to the A2DP consumer without turning backpressure into a long block.
-    const TickType_t wait = 1;
+    // The PCM buffer is intentionally small (2048 B ~= 11.6 ms at
+    // 44.1 kHz/stereo/16-bit). One RTOS tick is too short: the decoder then
+    // gets a partial write on almost every call, so ESPHome keeps its large
+    // transfer/decoder buffers alive and never reaches finish().
+    //
+    // 20 ms is still a hard upper bound, so this cannot turn backpressure
+    // into the unbounded blocking that caused the earlier WDT. In normal
+    // playback the A2DP callback drains the 2048 B buffer in about 12 ms and
+    // the whole decoder chunk can be accepted in one call.
+    const TickType_t wait = pdMS_TO_TICKS(20);
 
     const size_t written = xStreamBufferSend(
         this->buffer_, data + total_written, chunk, wait);
