@@ -2,6 +2,8 @@
 
 #include <cstring>
 
+#include <freertos/task.h>
+
 namespace esphome {
 namespace bt_audio_bridge {
 
@@ -40,7 +42,22 @@ size_t BtAudioEngine::write(const uint8_t *data, size_t len) {
   const size_t written = xStreamBufferSend(this->buffer_, data, request, 0);
   this->bytes_written_ += static_cast<uint32_t>(written);
 
-  if (written < len) this->overruns_++;
+  if (written < len) {
+    this->overruns_++;
+
+    // ESPHome's AudioPipeline can immediately call Speaker::play() again
+    // when only part of a decoder block was accepted. Our buffer is
+    // intentionally non-blocking, so returning a partial write without
+    // yielding can make the decoder task spin on a full buffer and starve
+    // Core 1 long enough to trigger the Task WDT.
+    //
+    // One RTOS tick gives the A2DP consumer time to drain the buffer before
+    // AudioPipeline retries the remaining PCM. This is especially important
+    // when len > BUFFER_SIZE - 1, because the cap itself necessarily makes
+    // the write partial even when the buffer was otherwise empty.
+    vTaskDelay(1);
+  }
+
   return written;
 }
 
