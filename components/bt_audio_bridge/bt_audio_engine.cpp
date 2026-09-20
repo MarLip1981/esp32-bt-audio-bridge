@@ -50,11 +50,11 @@ size_t BtAudioEngine::write(const uint8_t *data, size_t len, TickType_t ticks_to
     // gets a partial write on almost every call, so ESPHome keeps its large
     // transfer/decoder buffers alive and never reaches finish().
     //
-    // 20 ms is still a hard upper bound, so this cannot turn backpressure
+    // 10 ms is still a hard upper bound, so this cannot turn backpressure
     // into the unbounded blocking that caused the earlier WDT. In normal
     // playback the A2DP callback drains the 2048 B buffer in about 12 ms and
     // the whole decoder chunk can be accepted in one call.
-    const TickType_t wait = pdMS_TO_TICKS(20);
+    const TickType_t wait = pdMS_TO_TICKS(10);
 
     const size_t written = xStreamBufferSend(
         this->buffer_, data + total_written, chunk, wait);
