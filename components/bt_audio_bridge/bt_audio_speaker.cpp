@@ -23,34 +23,31 @@ void BtAudioBridge::start() {
   this->audio_engine_.clear();
   this->finish_requested_ = false;
   this->speaker_started_ = true;
+  this->media_enable_requested_ = false;
 
   // AUDIO SYNC FIX — 2026-09-21
-  // The previous sequence waited for the first PCM bytes before enabling
-  // A2DP media. On the original ESP32 the A2DP profile could then become
-  // active ~29 s after HA reported PLAYING. During that delay ESPHome kept
-  // feeding PCM into our 8 KiB buffer, which immediately saturated and the
-  // eventual playback contained only the tail of the TTS.
-  //
-  // Arm the A2DP media path immediately when HA starts the stream. The play()
-  // path below deliberately waits for the first A2DP callback before handing
-  // PCM to the bridge. This makes the order deterministic:
-  //   HA START -> A2DP media enabled -> A2DP callback -> PCM feed.
+  // Arm A2DP immediately when HA starts the stream, but send the media-start
+  // request exactly once. The previous experiment called set_media_enabled()
+  // from every play() call while A2DP was still negotiating. The resulting
+  // log contained a storm of "un-acked a2dp cmd: 2" messages and repeated
+  // 4112-byte SBC allocation failures.
   //
   // ROLLBACK POINT:
-  // Restore set_media_enabled(false) here and the old "enable after write"
-  // logic in play() if this experiment proves incompatible with ESPHome's
-  // Speaker pipeline.
+  // Restore the old delayed media-enable sequence if a future test proves
+  // that this library version requires it.
   this->a2dp_source_.set_media_enabled(true);
+  this->media_enable_requested_ = true;
 
   this->engine_test_active_ = false;
   this->state_ = speaker::STATE_RUNNING;
-  ESP_LOGI(SPEAKER_TAG, "HA audio stream START (A2DP armed)");
+  ESP_LOGI(SPEAKER_TAG, "HA audio stream START (A2DP armed once)");
 }
 
 void BtAudioBridge::stop() {
   this->finish_requested_ = false;
   this->speaker_started_ = false;
   this->a2dp_source_.set_media_enabled(false);
+  this->media_enable_requested_ = false;
   this->engine_test_active_ = false;
   this->audio_engine_.clear();
   this->state_ = speaker::STATE_STOPPED;
@@ -63,6 +60,7 @@ void BtAudioBridge::finish() {
   if (this->audio_engine_.available() == 0) {
     this->speaker_started_ = false;
     this->a2dp_source_.set_media_enabled(false);
+    this->media_enable_requested_ = false;
     this->finish_requested_ = false;
     this->state_ = speaker::STATE_STOPPED;
     ESP_LOGI(SPEAKER_TAG, "HA audio stream FINISHED");
@@ -89,9 +87,10 @@ size_t BtAudioBridge::play(const uint8_t *data, size_t length, TickType_t ticks_
 
   // Do not accept HA PCM before the A2DP source has actually requested data.
   // Returning 0 applies back-pressure to the Speaker pipeline instead of
-  // filling the 8 KiB bridge buffer for seconds while Bluetooth is idle.
+  // filling the 8 KiB bridge buffer while Bluetooth is still negotiating.
+  // IMPORTANT: set_media_enabled() is NOT repeated here. start() already sent
+  // the single media-start request for this stream.
   if (this->a2dp_callback_calls_ == 0) {
-    this->a2dp_source_.set_media_enabled(true);
     return 0;
   }
 
@@ -122,11 +121,9 @@ size_t BtAudioBridge::play(const uint8_t *data, size_t length) {
   if (!this->speaker_started_) return 0;
 
   // AUDIO SYNC FIX — see start().
-  // The previous implementation accepted PCM before the A2DP callback
-  // existed. With the observed ~29 s media-start delay that consumed the
-  // entire bridge buffer and left only the final fragment audible.
+  // Wait for the first real A2DP data callback before accepting PCM. Unlike
+  // the previous version, this path never sends another media-enable command.
   if (this->a2dp_callback_calls_ == 0) {
-    this->a2dp_source_.set_media_enabled(true);
     return 0;
   }
 
