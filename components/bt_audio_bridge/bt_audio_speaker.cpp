@@ -73,6 +73,8 @@ size_t BtAudioBridge::play(const uint8_t *data, size_t length, TickType_t ticks_
   if (!this->speaker_started_) return 0;
 
   const size_t written = this->audio_engine_.write(data, length, ticks_to_wait);
+  this->pcm_received_bytes_ += static_cast<uint32_t>(length);
+  this->pcm_queued_bytes_ += static_cast<uint32_t>(written);
   if (written > 0) {
     // Start the A2DP media path only after PCM is waiting in the buffer.
     // The callback can then immediately provide real audio instead of
@@ -102,7 +104,10 @@ size_t BtAudioBridge::play(const uint8_t *data, size_t length) {
 
   if (!this->speaker_started_) return 0;
 
-  return this->audio_engine_.write(data, length);
+  const size_t written = this->audio_engine_.write(data, length);
+  this->pcm_received_bytes_ += static_cast<uint32_t>(length);
+  this->pcm_queued_bytes_ += static_cast<uint32_t>(written);
+  return written;
 }
 
 bool BtAudioBridge::has_buffered_data() const {
