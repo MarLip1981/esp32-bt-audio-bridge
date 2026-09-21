@@ -473,6 +473,16 @@ void BtAudioBridge::start_a2dp_() {
   if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) { nvs_flash_erase(); err = nvs_flash_init(); }
   if (err != ESP_OK) { this->publish_event_("BT: NVS init failed"); return; }
   this->a2dp_source_.set_local_name("ESP32 BT Audio Bridge");
+  // MEMORY DIAGNOSTIC FIX — 2026-09-21
+  // This bridge uses Classic Bluetooth A2DP only. BLE is not used by the
+  // current firmware, so explicitly release the BLE controller memory before
+  // starting Bluedroid. The vendored A2DP library only does this when
+  // reset_ble is enabled. Recovering that memory is important because the
+  // ESP-IDF A2DP/SBC path needs a contiguous ~4 KiB allocation during media
+  // startup.
+  // ROLLBACK POINT: set_reset_ble(false) if another future component requires BLE.
+  this->a2dp_source_.set_reset_ble(true);
+
   this->a2dp_source_.set_ssp_enabled(true);
   this->a2dp_source_.set_auto_reconnect(true, 10);
   this->a2dp_source_.set_ssid_callback(bt_ssid_callback);
