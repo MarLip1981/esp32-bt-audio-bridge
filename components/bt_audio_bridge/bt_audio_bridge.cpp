@@ -232,16 +232,15 @@ int32_t BtAudioBridge::engine_audio_callback_(uint8_t *data, int32_t len) {
   const size_t requested = static_cast<size_t>(len);
   global_bt_audio_bridge->a2dp_callback_calls_++;
 
-  // When HA has not supplied PCM yet, do not manufacture a full block of
-  // silence. Returning 0 is explicitly supported by the A2DP source callback
-  // as the effective amount of audio available. This keeps the BT stack from
-  // continuously preparing SBC/TX buffers while the ESPHome decoder is
-  // catching up, which is important on the 520 KB ESP32 where those buffers
-  // need several KiB of contiguous heap each.
-  if (global_bt_audio_bridge->audio_engine_.available() == 0) {
-    return 0;
-  }
-
+  // ESP-IDF's A2DP source encoder asks for small PCM blocks (normally
+  // 512 bytes). Returning 0 here is treated as a hard underflow by
+  // btc_media_aa_prep_sbc_2_send(), which stops producing SBC frames.
+  //
+  // If the ESPHome decoder is temporarily behind the Bluetooth clock, feed
+  // silence for the missing samples instead. This keeps the A2DP media task
+  // running and makes the buffer deficit a short silent gap instead of a
+  // profile-level underflow. The callback remains non-blocking and performs
+  // no allocation, logging, or ESPHome calls.
   const size_t received = global_bt_audio_bridge->audio_engine_.read(data, requested);
 
   global_bt_audio_bridge->a2dp_read_bytes_ += static_cast<uint32_t>(received);
