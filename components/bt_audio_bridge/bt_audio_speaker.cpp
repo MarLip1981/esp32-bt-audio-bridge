@@ -23,13 +23,28 @@ void BtAudioBridge::start() {
   this->audio_engine_.clear();
   this->finish_requested_ = false;
   this->speaker_started_ = true;
-  // Do not enable A2DP media until the first PCM bytes are actually queued.
-  // This prevents the BT stack from repeatedly allocating SBC TX buffers
-  // while HA is still preparing the decoder/TTS output.
-  this->a2dp_source_.set_media_enabled(false);
+
+  // AUDIO SYNC FIX — 2026-09-21
+  // The previous sequence waited for the first PCM bytes before enabling
+  // A2DP media. On the original ESP32 the A2DP profile could then become
+  // active ~29 s after HA reported PLAYING. During that delay ESPHome kept
+  // feeding PCM into our 8 KiB buffer, which immediately saturated and the
+  // eventual playback contained only the tail of the TTS.
+  //
+  // Arm the A2DP media path immediately when HA starts the stream. The play()
+  // path below deliberately waits for the first A2DP callback before handing
+  // PCM to the bridge. This makes the order deterministic:
+  //   HA START -> A2DP media enabled -> A2DP callback -> PCM feed.
+  //
+  // ROLLBACK POINT:
+  // Restore set_media_enabled(false) here and the old "enable after write"
+  // logic in play() if this experiment proves incompatible with ESPHome's
+  // Speaker pipeline.
+  this->a2dp_source_.set_media_enabled(true);
+
   this->engine_test_active_ = false;
   this->state_ = speaker::STATE_RUNNING;
-  ESP_LOGI(SPEAKER_TAG, "HA audio stream START");
+  ESP_LOGI(SPEAKER_TAG, "HA audio stream START (A2DP armed)");
 }
 
 void BtAudioBridge::stop() {
@@ -72,15 +87,17 @@ size_t BtAudioBridge::play(const uint8_t *data, size_t length, TickType_t ticks_
 
   if (!this->speaker_started_) return 0;
 
+  // Do not accept HA PCM before the A2DP source has actually requested data.
+  // Returning 0 applies back-pressure to the Speaker pipeline instead of
+  // filling the 8 KiB bridge buffer for seconds while Bluetooth is idle.
+  if (this->a2dp_callback_calls_ == 0) {
+    this->a2dp_source_.set_media_enabled(true);
+    return 0;
+  }
+
   const size_t written = this->audio_engine_.write(data, length, ticks_to_wait);
   this->pcm_received_bytes_ += static_cast<uint32_t>(length);
   this->pcm_queued_bytes_ += static_cast<uint32_t>(written);
-  if (written > 0) {
-    // Start the A2DP media path only after PCM is waiting in the buffer.
-    // The callback can then immediately provide real audio instead of
-    // repeatedly returning 0 while the SBC/TX path is being initialized.
-    this->a2dp_source_.set_media_enabled(true);
-  }
   return written;
 }
 #endif
@@ -104,25 +121,18 @@ size_t BtAudioBridge::play(const uint8_t *data, size_t length) {
 
   if (!this->speaker_started_) return 0;
 
+  // AUDIO SYNC FIX — see start().
+  // The previous implementation accepted PCM before the A2DP callback
+  // existed. With the observed ~29 s media-start delay that consumed the
+  // entire bridge buffer and left only the final fragment audible.
+  if (this->a2dp_callback_calls_ == 0) {
+    this->a2dp_source_.set_media_enabled(true);
+    return 0;
+  }
+
   const size_t written = this->audio_engine_.write(data, length);
   this->pcm_received_bytes_ += static_cast<uint32_t>(length);
   this->pcm_queued_bytes_ += static_cast<uint32_t>(written);
-
-  if (written > 0) {
-    // CRITICAL DIAGNOSTIC FIX — 2026-09-21
-    // ESPHome can feed this 2-argument Speaker::play() overload for the
-    // normal media pipeline. The previous code enabled A2DP media only in
-    // the TickType_t overload. As a result PCM was queued successfully, but
-    // the A2DP source never entered its media-start path: A2DP_cb stayed 0,
-    // the PCM buffer remained full, and finish() waited forever until the
-    // user pressed STOP in Home Assistant.
-    //
-    // The Bluetooth connection itself can remain CONNECTED while A2DP media
-    // is not started. Enable media as soon as real PCM is queued, matching
-    // the working behavior of the other play() overload.
-    this->a2dp_source_.set_media_enabled(true);
-  }
-
   return written;
 }
 
