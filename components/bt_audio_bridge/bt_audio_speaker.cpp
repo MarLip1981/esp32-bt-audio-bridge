@@ -26,6 +26,28 @@ void BtAudioBridge::start() {
   this->media_enable_requested_ = false;
 
   // AUDIO SYNC FIX — 2026-09-21
+  // Each HA playback gets a fresh A2DP callback counter. Without this reset,
+  // a previous TTS could leave a2dp_callback_calls_ > 0 and the next TTS
+  // would incorrectly skip the "wait for first callback" protection.
+  // This is a per-stream diagnostic/guard reset; it does not reset the BT stack.
+  //
+  // ROLLBACK POINT:
+  // Remove only these two counter resets if a future test proves that the
+  // callback counter must remain cumulative across HA streams.
+  this->a2dp_callback_calls_ = 0;
+  this->a2dp_read_bytes_ = 0;
+
+  // Reset per-stream diagnostic counters too, so the next AUDIO-DIAG line
+  // starts from zero and can be compared directly with the new TTS stream.
+  this->pcm_received_bytes_ = 0;
+  this->pcm_queued_bytes_ = 0;
+  this->last_diag_pcm_received_ = 0;
+  this->last_diag_pcm_queued_ = 0;
+  this->last_diag_a2dp_calls_ = 0;
+  this->last_diag_a2dp_read_ = 0;
+  this->last_audio_diag_ = millis();
+
+  // AUDIO SYNC FIX — 2026-09-21
   // Arm A2DP immediately when HA starts the stream, but send the media-start
   // request exactly once. The previous experiment called set_media_enabled()
   // from every play() call while A2DP was still negotiating. The resulting
