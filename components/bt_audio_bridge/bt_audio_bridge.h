@@ -19,7 +19,14 @@ extern BtAudioBridge *global_bt_audio_bridge;
 class BtAudioBridgeA2DPSource : public BluetoothA2DPSource {
  public:
   explicit BtAudioBridgeA2DPSource(BtAudioBridge *owner) : owner_(owner) {
-    this->set_event_stack_size(4096);
+    // MEMORY DIAGNOSTIC FIX — 2026-09-21
+    // The vendored ESP32-A2DP library defaults to a 3072-byte event-task stack.
+    // We previously overrode it to 4096 B, costing 1024 B of heap on the
+    // original ESP32. During A2DP media startup the largest free block fell
+    // below the 4112 B SBC allocation requested by ESP-IDF.
+    // Keep the library default here to recover that 1 KiB.
+    // ROLLBACK POINT: restore 4096 B if a future test proves it is required.
+    this->set_event_stack_size(3072);
     this->set_event_queue_size(10);
   }
 
