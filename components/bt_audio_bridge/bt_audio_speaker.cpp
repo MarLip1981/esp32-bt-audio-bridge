@@ -107,6 +107,22 @@ size_t BtAudioBridge::play(const uint8_t *data, size_t length) {
   const size_t written = this->audio_engine_.write(data, length);
   this->pcm_received_bytes_ += static_cast<uint32_t>(length);
   this->pcm_queued_bytes_ += static_cast<uint32_t>(written);
+
+  if (written > 0) {
+    // CRITICAL DIAGNOSTIC FIX — 2026-09-21
+    // ESPHome can feed this 2-argument Speaker::play() overload for the
+    // normal media pipeline. The previous code enabled A2DP media only in
+    // the TickType_t overload. As a result PCM was queued successfully, but
+    // the A2DP source never entered its media-start path: A2DP_cb stayed 0,
+    // the PCM buffer remained full, and finish() waited forever until the
+    // user pressed STOP in Home Assistant.
+    //
+    // The Bluetooth connection itself can remain CONNECTED while A2DP media
+    // is not started. Enable media as soon as real PCM is queued, matching
+    // the working behavior of the other play() overload.
+    this->a2dp_source_.set_media_enabled(true);
+  }
+
   return written;
 }
 
