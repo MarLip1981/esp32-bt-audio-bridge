@@ -138,6 +138,16 @@ class BtAudioBridge : public Component, public speaker::Speaker {
   int scan_cycles_{0};
   unsigned long last_status_check_{0};
   unsigned long last_rssi_request_{0};
+  // Temporary MAIN-MEDIAPLAYER diagnostics. Updated by the audio path, logged from loop().
+  volatile uint32_t pcm_received_bytes_{0};
+  volatile uint32_t pcm_queued_bytes_{0};
+  volatile uint32_t a2dp_callback_calls_{0};
+  volatile uint32_t a2dp_read_bytes_{0};
+  unsigned long last_audio_diag_{0};
+  uint32_t last_diag_pcm_received_{0};
+  uint32_t last_diag_pcm_queued_{0};
+  uint32_t last_diag_a2dp_calls_{0};
+  uint32_t last_diag_a2dp_read_{0};
 };
 
 }  // namespace bt_audio_bridge
