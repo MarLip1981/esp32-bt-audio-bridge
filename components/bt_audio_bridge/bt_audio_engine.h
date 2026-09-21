@@ -11,10 +11,16 @@ namespace bt_audio_bridge {
 
 class BtAudioEngine {
  public:
-  // Static PCM buffer: avoids a ~4 KiB heap allocation and leaves the
-  // Classic BT stack enough contiguous heap for A2DP/SBC TX buffers.
-  // 2048 bytes is ~11.6 ms at 44.1 kHz stereo / 16-bit.
-  static constexpr size_t BUFFER_SIZE = 2048;
+  // DIAGNOSTIC EXPERIMENT — 2026-09-21
+  // Increased PCM buffer from 2048 B to 8192 B.
+  // Reason: the 2048 B buffer gave only ~11.6 ms of stereo 16-bit / 44.1 kHz
+  // audio and the A2DP path showed repeated underflows in the previous test.
+  // 8192 B provides ~46 ms of PCM and should give the A2DP task more scheduling margin.
+  //
+  // ROLLBACK POINT:
+  // Previous value was 2048 B.
+  // Keep this comment and commit history intact while diagnosing the audio path.
+  static constexpr size_t BUFFER_SIZE = 8192;
   static constexpr size_t TRIGGER_LEVEL = 1;
 
   bool begin();
