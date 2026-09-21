@@ -133,6 +133,14 @@ class BtAudioBridge : public Component, public speaker::Speaker {
   bool engine_test_active_{false};
   bool speaker_started_{false};
   bool finish_requested_{false};
+  // AUDIO SYNC DIAGNOSTIC — 2026-09-21
+  // Guards set_media_enabled(true) so the A2DP START command is sent once
+  // per HA stream. The previous test called it repeatedly while waiting for
+  // the first callback; the log then showed dozens of "un-acked a2dp cmd: 2"
+  // messages followed by repeated 4112-byte SBC allocation failures.
+  // ROLLBACK POINT: remove this guard only if the library is proven to require
+  // repeated media-enable calls.
+  bool media_enable_requested_{false};
   uint32_t auto_connect_started_{0};
 
   char selected_mac_[18]{};
