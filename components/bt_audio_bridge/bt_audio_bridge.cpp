@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include <esp_system.h>
+#include <esp_heap_caps.h>
 #include <esp_timer.h>
 #include <nvs.h>
 #include <nvs_flash.h>
@@ -229,6 +230,7 @@ int32_t BtAudioBridge::engine_audio_callback_(uint8_t *data, int32_t len) {
   }
 
   const size_t requested = static_cast<size_t>(len);
+  global_bt_audio_bridge->a2dp_callback_calls_++;
 
   // When HA has not supplied PCM yet, do not manufacture a full block of
   // silence. Returning 0 is explicitly supported by the A2DP source callback
@@ -241,6 +243,8 @@ int32_t BtAudioBridge::engine_audio_callback_(uint8_t *data, int32_t len) {
   }
 
   const size_t received = global_bt_audio_bridge->audio_engine_.read(data, requested);
+
+  global_bt_audio_bridge->a2dp_read_bytes_ += static_cast<uint32_t>(received);
 
   if (received < requested) {
     std::memset(data + received, 0, requested - received);
@@ -271,6 +275,15 @@ void BtAudioBridge::setup() {
   this->engine_test_active_ = false;
   this->speaker_started_ = false;
   this->finish_requested_ = false;
+  this->pcm_received_bytes_ = 0;
+  this->pcm_queued_bytes_ = 0;
+  this->a2dp_callback_calls_ = 0;
+  this->a2dp_read_bytes_ = 0;
+  this->last_audio_diag_ = millis();
+  this->last_diag_pcm_received_ = 0;
+  this->last_diag_pcm_queued_ = 0;
+  this->last_diag_a2dp_calls_ = 0;
+  this->last_diag_a2dp_read_ = 0;
   this->last_published_status_[0] = '\0';
   this->last_published_device_[0] = '\0';
   std::strncpy(this->status_, this->auto_connect_pending_ ? "CONNECTING" : "READY", sizeof(this->status_) - 1);
@@ -343,6 +356,27 @@ void BtAudioBridge::loop() {
       this->connect_to(mac);
       this->publish_event_("BOOT: direct reconnect to saved speaker");
     }
+  }
+
+  if (this->speaker_started_ && now - this->last_audio_diag_ >= 1000) {
+    ESP_LOGW(TAG,
+             "AUDIO-DIAG heap=%u largest=%u PCM_rx=%u(+%u) PCM_buf=%u PCM_q=%u(+%u) A2DP_cb=%u(+%u) A2DP_read=%u(+%u)",
+             static_cast<unsigned>(esp_get_free_heap_size()),
+             static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)),
+             static_cast<unsigned>(this->pcm_received_bytes_),
+             static_cast<unsigned>(this->pcm_received_bytes_ - this->last_diag_pcm_received_),
+             static_cast<unsigned>(this->audio_engine_.available()),
+             static_cast<unsigned>(this->pcm_queued_bytes_),
+             static_cast<unsigned>(this->pcm_queued_bytes_ - this->last_diag_pcm_queued_),
+             static_cast<unsigned>(this->a2dp_callback_calls_),
+             static_cast<unsigned>(this->a2dp_callback_calls_ - this->last_diag_a2dp_calls_),
+             static_cast<unsigned>(this->a2dp_read_bytes_),
+             static_cast<unsigned>(this->a2dp_read_bytes_ - this->last_diag_a2dp_read_));
+    this->last_diag_pcm_received_ = this->pcm_received_bytes_;
+    this->last_diag_pcm_queued_ = this->pcm_queued_bytes_;
+    this->last_diag_a2dp_calls_ = this->a2dp_callback_calls_;
+    this->last_diag_a2dp_read_ = this->a2dp_read_bytes_;
+    this->last_audio_diag_ = now;
   }
 
   if (this->finish_requested_ && this->speaker_started_ && this->audio_engine_.available() == 0) {
