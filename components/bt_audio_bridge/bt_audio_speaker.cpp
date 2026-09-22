@@ -25,15 +25,23 @@ void BtAudioBridge::start() {
   this->speaker_started_ = true;
   this->media_enable_requested_ = false;
 
-  // AUDIO SYNC FIX — 2026-09-21
-  // Each HA playback gets a fresh A2DP callback counter. Without this reset,
-  // a previous TTS could leave a2dp_callback_calls_ > 0 and the next TTS
-  // would incorrectly skip the "wait for first callback" protection.
-  // This is a per-stream diagnostic/guard reset; it does not reset the BT stack.
+  // AUDIO SYNC DIAGNOSTIC — 2026-09-22
+  // Each HA playback gets a fresh A2DP callback counter and fresh per-stream
+  // diagnostics. The counter is diagnostic only; it must NOT gate Speaker::play().
+  //
+  // IMPORTANT:
+  // The previous experiment returned 0 from play() until the first A2DP
+  // callback arrived. On ESPHome 2026.9 this can keep AudioPipeline's
+  // decode/sink task retrying the same output buffer and resulted in a
+  // Task WDT before any PCM reached this bridge.
+  //
+  // We therefore remove that back-pressure gate. A2DP is armed once below,
+  // while the bridge PCM buffer provides the actual back-pressure.
   //
   // ROLLBACK POINT:
-  // Remove only these two counter resets if a future test proves that the
-  // callback counter must remain cumulative across HA streams.
+  // Commit 105d8129 reset these counters and commit 79f6b534 added the
+  // media-enable guard. The previous "wait for first callback" gate is
+  // intentionally not restored unless a later test proves it is required.
   this->a2dp_callback_calls_ = 0;
   this->a2dp_read_bytes_ = 0;
 
@@ -107,15 +115,14 @@ size_t BtAudioBridge::play(const uint8_t *data, size_t length, TickType_t ticks_
 
   if (!this->speaker_started_) return 0;
 
-  // Do not accept HA PCM before the A2DP source has actually requested data.
-  // Returning 0 applies back-pressure to the Speaker pipeline instead of
-  // filling the 8 KiB bridge buffer while Bluetooth is still negotiating.
-  // IMPORTANT: set_media_enabled() is NOT repeated here. start() already sent
-  // the single media-start request for this stream.
-  if (this->a2dp_callback_calls_ == 0) {
-    return 0;
-  }
-
+  // AUDIO SYNC DIAGNOSTIC — 2026-09-22
+  // Do NOT wait for a2dp_callback_calls_ here.
+  // Returning 0 before the first callback caused ESPHome's AudioPipeline to
+  // repeatedly retry the same decoded PCM and triggered a Task WDT.
+  // The A2DP callback may initially read silence; the PCM stream can then
+  // continue normally once the Bluetooth media path requests data.
+  //
+  // set_media_enabled() is intentionally NOT repeated here.
   const size_t written = this->audio_engine_.write(data, length, ticks_to_wait);
   this->pcm_received_bytes_ += static_cast<uint32_t>(length);
   this->pcm_queued_bytes_ += static_cast<uint32_t>(written);
@@ -142,13 +149,14 @@ size_t BtAudioBridge::play(const uint8_t *data, size_t length) {
 
   if (!this->speaker_started_) return 0;
 
-  // AUDIO SYNC FIX — see start().
-  // Wait for the first real A2DP data callback before accepting PCM. Unlike
-  // the previous version, this path never sends another media-enable command.
-  if (this->a2dp_callback_calls_ == 0) {
-    return 0;
-  }
-
+  // AUDIO SYNC DIAGNOSTIC — 2026-09-22
+  // Same rule as the timed Speaker::play() overload above: never gate the
+  // AudioPipeline on the first A2DP callback. The bridge PCM buffer is the
+  // back-pressure mechanism.
+  //
+  // ROLLBACK POINT:
+  // Restore the callback gate only if a later test demonstrates that accepting
+  // PCM before the first A2DP callback causes a reproducible, different fault.
   const size_t written = this->audio_engine_.write(data, length);
   this->pcm_received_bytes_ += static_cast<uint32_t>(length);
   this->pcm_queued_bytes_ += static_cast<uint32_t>(written);
