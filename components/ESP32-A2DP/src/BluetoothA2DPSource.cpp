@@ -581,6 +581,13 @@ void BluetoothA2DPSource::av_hdl_stack_evt(uint16_t event, void *p_param) {
 
 void BluetoothA2DPSource::app_a2d_callback(esp_a2d_cb_event_t event,
                                         esp_a2d_cb_param_t *param) {
+  // WARN-level diagnostics are intentional because the device logger is set to WARN.
+  ESP_LOGW(BT_AV_TAG, "A2DP-DIAG callback event=%d", static_cast<int>(event));
+  if (event == ESP_A2D_MEDIA_CTRL_ACK_EVT && param != nullptr) {
+    ESP_LOGW(BT_AV_TAG, "A2DP-DIAG ACK cmd=%d status=%d",
+             static_cast<int>(param->media_ctrl_stat.cmd),
+             static_cast<int>(param->media_ctrl_stat.status));
+  }
   bt_app_work_dispatch(ccall_bt_app_av_sm_hdlr, event, param,
                        sizeof(esp_a2d_cb_param_t), nullptr);
 }
@@ -817,8 +824,11 @@ void BluetoothA2DPSource::bt_app_av_state_connected_hdlr(uint16_t event,
     }
     case BT_APP_HEART_BEAT_EVT: {
       if (this->media_enabled_ && s_media_state == APP_AV_MEDIA_STATE_IDLE) {
-        ESP_LOGI(BT_AV_TAG, "a2dp media ready checking ...");
-        esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY);
+        ESP_LOGW(BT_AV_TAG,
+                 "A2DP-DIAG heartbeat CHECK_SRC_RDY conn_state=%d media_state=%d",
+                 static_cast<int>(s_a2d_state), static_cast<int>(s_media_state));
+        esp_err_t err = esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY);
+        ESP_LOGW(BT_AV_TAG, "A2DP-DIAG CHECK_SRC_RDY returned=%s", esp_err_to_name(err));
       }
       break;
     }
@@ -1106,6 +1116,10 @@ void BluetoothA2DPSource::bt_av_hdl_avrc_ct_evt(uint16_t event, void *p_param) {
 void BluetoothA2DPSource::set_reset_ble(bool doInit) { reset_ble = doInit; }
 
 void BluetoothA2DPSource::set_media_enabled(bool enabled) {
+  ESP_LOGW(BT_AV_TAG,
+           "A2DP-DIAG set_media_enabled=%d conn_state=%d media_state=%d",
+           static_cast<int>(enabled), static_cast<int>(s_a2d_state),
+           static_cast<int>(s_media_state));
   this->media_enabled_ = enabled;
   if (enabled) {
     if (s_a2d_state == APP_AV_STATE_CONNECTED) {
