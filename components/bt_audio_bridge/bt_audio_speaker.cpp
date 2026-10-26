@@ -55,18 +55,12 @@ void BtAudioBridge::start() {
   this->last_diag_a2dp_read_ = 0;
   this->last_audio_diag_ = millis();
 
-  // AUDIO SYNC FIX — 2026-09-21
-  // Arm A2DP immediately when HA starts the stream, but send the media-start
-  // request exactly once. The previous experiment called set_media_enabled()
-  // from every play() call while A2DP was still negotiating. The resulting
-  // log contained a storm of "un-acked a2dp cmd: 2" messages and repeated
-  // 4112-byte SBC allocation failures.
-  //
-  // ROLLBACK POINT:
-  // Restore the old delayed media-enable sequence if a future test proves
-  // that this library version requires it.
-  this->a2dp_source_.set_media_enabled(true);
-  this->media_enable_requested_ = true;
+  // Start with media TX suspended. The first real PCM write below arms
+  // A2DP exactly once, so CHECK_SRC_RDY is issued only after audio is queued.
+  // Repeated calls while the profile negotiates caused un-acked START commands
+  // and SBC allocation failures in earlier tests.
+  this->a2dp_source_.set_media_enabled(false);
+  this->media_enable_requested_ = false;
 
   this->engine_test_active_ = false;
   this->state_ = speaker::STATE_RUNNING;
@@ -126,6 +120,11 @@ size_t BtAudioBridge::play(const uint8_t *data, size_t length, TickType_t ticks_
   const size_t written = this->audio_engine_.write(data, length, ticks_to_wait);
   this->pcm_received_bytes_ += static_cast<uint32_t>(length);
   this->pcm_queued_bytes_ += static_cast<uint32_t>(written);
+  if (written > 0 && !this->media_enable_requested_) {
+    this->media_enable_requested_ = true;
+    this->a2dp_source_.set_media_enabled(true);
+    ESP_LOGI(SPEAKER_TAG, "A2DP media armed after first PCM block");
+  }
   return written;
 }
 #endif
@@ -160,6 +159,11 @@ size_t BtAudioBridge::play(const uint8_t *data, size_t length) {
   const size_t written = this->audio_engine_.write(data, length);
   this->pcm_received_bytes_ += static_cast<uint32_t>(length);
   this->pcm_queued_bytes_ += static_cast<uint32_t>(written);
+  if (written > 0 && !this->media_enable_requested_) {
+    this->media_enable_requested_ = true;
+    this->a2dp_source_.set_media_enabled(true);
+    ESP_LOGI(SPEAKER_TAG, "A2DP media armed after first PCM block");
+  }
   return written;
 }
 
