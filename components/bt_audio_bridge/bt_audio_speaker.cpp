@@ -53,7 +53,9 @@ void BtAudioBridge::start() {
   this->last_diag_pcm_queued_ = 0;
   this->last_diag_a2dp_calls_ = 0;
   this->last_diag_a2dp_read_ = 0;
-  this->last_audio_diag_ = millis();
+  // Emit the first PCM/A2DP counters about 250 ms into playback, before a short WDT can hide the evidence.
+  const uint32_t audio_start_ms = millis();
+  this->last_audio_diag_ = audio_start_ms > 750 ? audio_start_ms - 750 : 0;
 
   // Start with media TX suspended. The first real PCM write below arms
   // A2DP exactly once, so CHECK_SRC_RDY is issued only after audio is queued.
