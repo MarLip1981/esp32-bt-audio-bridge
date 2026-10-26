@@ -248,6 +248,8 @@ int32_t BtAudioBridge::engine_audio_callback_(uint8_t *data, int32_t len) {
 
 void BtAudioBridge::setup() {
   global_bt_audio_bridge = this;
+  // Unique runtime fingerprint: confirms that the installed firmware contains this bridge source.
+  ESP_LOGW(TAG, "BRIDGE-DIAG build=PCM-PULL-01 callback-counters=enabled");
   esp_err_t nvs_err = nvs_flash_init();
   if (nvs_err == ESP_ERR_NVS_NO_FREE_PAGES || nvs_err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
     nvs_flash_erase();
