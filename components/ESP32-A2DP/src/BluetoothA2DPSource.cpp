@@ -886,66 +886,78 @@ void BluetoothA2DPSource::bt_app_av_state_disconnecting_hdlr(uint16_t event,
 }
 
 void BluetoothA2DPSource::bt_app_av_media_proc(uint16_t event, void *param) {
-  if (event != ESP_A2D_MEDIA_CTRL_ACK_EVT || param == nullptr) return;
-
-  auto *a2d = static_cast<esp_a2d_cb_param_t *>(param);
-  const auto cmd = a2d->media_ctrl_stat.cmd;
-  const auto status = a2d->media_ctrl_stat.status;
-
-  // Bluedroid may deliver a late ACK for an earlier command. Never let an ACK
-  // for a different command move the media state backwards: doing so can cause
-  // duplicate CHECK_SRC_RDY/START requests and repeated SBC buffer allocation.
-  ESP_LOGW(BT_AV_TAG, "A2DP-DIAG media ACK cmd=%d status=%d state=%d",
-           static_cast<int>(cmd), static_cast<int>(status), s_media_state);
+  // Keep the A2DP media state machine aligned with the Espressif reference
+  // implementation. Only this handler advances IDLE -> STARTING -> STARTED
+  // in response to the matching media-control ACKs.
+  ESP_LOGI(BT_AV_TAG, "A2DP-REF media handler event=%u state=%d",
+           static_cast<unsigned>(event), s_media_state);
+  esp_a2d_cb_param_t *a2d = nullptr;
 
   switch (s_media_state) {
     case APP_AV_MEDIA_STATE_IDLE: {
-      if (cmd != ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY) break;
-      if (status != ESP_A2D_MEDIA_CTRL_ACK_SUCCESS) {
-        ESP_LOGW(BT_AV_TAG, "A2DP media readiness check failed; will retry");
-        break;
-      }
-
-      ESP_LOGI(BT_AV_TAG, "a2dp media ready, starting ...");
-      {
-        const esp_err_t err = esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_START);
-        ESP_LOGW(BT_AV_TAG, "A2DP-DIAG START request=%s", esp_err_to_name(err));
-        if (err == ESP_OK) {
+      if (event == ESP_A2D_MEDIA_CTRL_ACK_EVT) {
+        a2d = static_cast<esp_a2d_cb_param_t *>(param);
+        if (a2d != nullptr &&
+            a2d->media_ctrl_stat.cmd == ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY &&
+            a2d->media_ctrl_stat.status == ESP_A2D_MEDIA_CTRL_ACK_SUCCESS) {
+          ESP_LOGI(BT_AV_TAG, "A2DP-REF readiness ACK success; requesting START");
+          const esp_err_t err = esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_START);
+          ESP_LOGI(BT_AV_TAG, "A2DP-REF START request result=%s", esp_err_to_name(err));
           s_media_state = APP_AV_MEDIA_STATE_STARTING;
+        } else if (a2d != nullptr) {
+          ESP_LOGW(BT_AV_TAG, "A2DP-REF readiness ACK cmd=%d status=%d",
+                   static_cast<int>(a2d->media_ctrl_stat.cmd),
+                   static_cast<int>(a2d->media_ctrl_stat.status));
         }
       }
       break;
     }
 
     case APP_AV_MEDIA_STATE_STARTING: {
-      if (cmd != ESP_A2D_MEDIA_CTRL_START) break;
-      if (status == ESP_A2D_MEDIA_CTRL_ACK_SUCCESS) {
-        ESP_LOGI(BT_AV_TAG, "a2dp media start successfully.");
-        s_intv_cnt = 0;
-        s_media_state = APP_AV_MEDIA_STATE_STARTED;
-      } else {
-        ESP_LOGW(BT_AV_TAG, "a2dp media START rejected; returning to IDLE");
-        s_media_state = APP_AV_MEDIA_STATE_IDLE;
+      if (event == ESP_A2D_MEDIA_CTRL_ACK_EVT) {
+        a2d = static_cast<esp_a2d_cb_param_t *>(param);
+        if (a2d != nullptr &&
+            a2d->media_ctrl_stat.cmd == ESP_A2D_MEDIA_CTRL_START &&
+            a2d->media_ctrl_stat.status == ESP_A2D_MEDIA_CTRL_ACK_SUCCESS) {
+          ESP_LOGI(BT_AV_TAG, "A2DP-REF START ACK success");
+          s_intv_cnt = 0;
+          s_media_state = APP_AV_MEDIA_STATE_STARTED;
+        } else {
+          ESP_LOGW(BT_AV_TAG, "A2DP-REF START ACK failed or mismatched; returning to IDLE");
+          s_media_state = APP_AV_MEDIA_STATE_IDLE;
+        }
       }
       break;
     }
 
-    case APP_AV_MEDIA_STATE_STARTED:
-      // Ignore stale ACKs. The stream is already active.
+    case APP_AV_MEDIA_STATE_STARTED: {
+      if (event == BT_APP_HEART_BEAT_EVT) {
+        if (++s_intv_cnt >= 10) {
+          ESP_LOGI(BT_AV_TAG, "A2DP-REF media idle timeout; requesting SUSPEND");
+          const esp_err_t err = esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_SUSPEND);
+          ESP_LOGI(BT_AV_TAG, "A2DP-REF SUSPEND request result=%s", esp_err_to_name(err));
+          s_media_state = APP_AV_MEDIA_STATE_STOPPING;
+          s_intv_cnt = 0;
+        }
+      }
       break;
+    }
 
     case APP_AV_MEDIA_STATE_STOPPING: {
-      if (cmd != ESP_A2D_MEDIA_CTRL_SUSPEND) break;
-      if (status == ESP_A2D_MEDIA_CTRL_ACK_SUCCESS) {
-        ESP_LOGI(BT_AV_TAG,
-                 "a2dp media stopped successfully, disconnecting...");
-        s_media_state = APP_AV_MEDIA_STATE_IDLE;
-        esp_a2d_source_disconnect(peer_bd_addr);
-        s_a2d_state = APP_AV_STATE_DISCONNECTING;
-      } else {
-        ESP_LOGW(BT_AV_TAG, "a2dp media SUSPEND rejected; retrying");
-        const esp_err_t err = esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_SUSPEND);
-        ESP_LOGW(BT_AV_TAG, "A2DP-DIAG SUSPEND request=%s", esp_err_to_name(err));
+      if (event == ESP_A2D_MEDIA_CTRL_ACK_EVT) {
+        a2d = static_cast<esp_a2d_cb_param_t *>(param);
+        if (a2d != nullptr &&
+            a2d->media_ctrl_stat.cmd == ESP_A2D_MEDIA_CTRL_SUSPEND &&
+            a2d->media_ctrl_stat.status == ESP_A2D_MEDIA_CTRL_ACK_SUCCESS) {
+          ESP_LOGI(BT_AV_TAG, "A2DP-REF SUSPEND ACK success; disconnecting");
+          s_media_state = APP_AV_MEDIA_STATE_IDLE;
+          esp_a2d_source_disconnect(peer_bd_addr);
+          s_a2d_state = APP_AV_STATE_DISCONNECTING;
+        } else {
+          ESP_LOGW(BT_AV_TAG, "A2DP-REF SUSPEND ACK failed; retrying");
+          const esp_err_t err = esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_SUSPEND);
+          ESP_LOGW(BT_AV_TAG, "A2DP-REF SUSPEND retry result=%s", esp_err_to_name(err));
+        }
       }
       break;
     }
