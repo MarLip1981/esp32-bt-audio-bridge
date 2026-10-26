@@ -212,41 +212,37 @@ void BtAudioBridge::on_battery_status(esp_avrc_batt_stat_t status) {
 }
 
 int32_t BtAudioBridge::engine_audio_callback_(uint8_t *data, int32_t len) {
-  if (global_bt_audio_bridge == nullptr || data == nullptr || len <= 0) {
+  if (data == nullptr || len <= 0) {
     return 0;
   }
 
-  // This callback runs from the A2DP/BT audio task. Keep it strictly real-time:
-  // only copy PCM from the lock-free stream buffer and never call ESPHome
-  // speaker callbacks, logging, allocation, or other potentially blocking code.
-  //
-  // IMPORTANT: returning a full buffer while HA is not playing would make the
-  // A2DP source continuously transmit silence immediately after connection.
-  // That can fill the BT/L2CAP TX path even though the HA media player is idle.
-  if (!global_bt_audio_bridge->speaker_started_) {
-    return 0;
-  }
-
+  // Bluedroid's A2DP source callback is a pull interface: answer with a full
+  // PCM block. Returning 0 for a brief race with HA start/stop is interpreted
+  // by the SBC path as an underflow and can halt media packet production.
+  // Keep this callback real-time: no logging, allocation, locks, or ESPHome
+  // speaker callbacks from the Bluetooth audio task.
   const size_t requested = static_cast<size_t>(len);
-  global_bt_audio_bridge->a2dp_callback_calls_++;
-
-  // ESP-IDF's A2DP source encoder asks for small PCM blocks (normally
-  // 512 bytes). Returning 0 here is treated as a hard underflow by
-  // btc_media_aa_prep_sbc_2_send(), which stops producing SBC frames.
-  //
-  // If the ESPHome decoder is temporarily behind the Bluetooth clock, feed
-  // silence for the missing samples instead. This keeps the A2DP media task
-  // running and makes the buffer deficit a short silent gap instead of a
-  // profile-level underflow. The callback remains non-blocking and performs
-  // no allocation, logging, or ESPHome calls.
-  const size_t received = global_bt_audio_bridge->audio_engine_.read(data, requested);
-
-  global_bt_audio_bridge->a2dp_read_bytes_ += static_cast<uint32_t>(received);
-
-  if (received < requested) {
-    std::memset(data + received, 0, requested - received);
+  BtAudioBridge *bridge = global_bt_audio_bridge;
+  if (bridge == nullptr) {
+    std::memset(data, 0, requested);
+    return static_cast<int32_t>(requested);
   }
 
+  bridge->a2dp_callback_calls_++;
+
+  // A callback can race with HA's start/finish transition. Supply a valid
+  // silent PCM block in that narrow window rather than returning 0 and
+  // making Bluedroid treat it as a hard media underflow. Normal idle playback
+  // is still prevented by set_media_enabled(false).
+  if (!bridge->speaker_started_) {
+    std::memset(data, 0, requested);
+    return static_cast<int32_t>(requested);
+  }
+
+  // BtAudioEngine::read() already pads any short read with silence and
+  // returns the requested length, preserving the A2DP PCM callback contract.
+  bridge->audio_engine_.read(data, requested);
+  bridge->a2dp_read_bytes_ += static_cast<uint32_t>(requested);
   return static_cast<int32_t>(requested);
 }
 
