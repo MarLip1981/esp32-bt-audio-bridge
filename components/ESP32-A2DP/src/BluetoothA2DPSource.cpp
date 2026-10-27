@@ -822,11 +822,19 @@ void BluetoothA2DPSource::bt_app_av_state_connected_hdlr(uint16_t event,
       break;
     }
     case BT_APP_HEART_BEAT_EVT: {
-      if (this->media_enabled_ && s_media_state == APP_AV_MEDIA_STATE_IDLE) {
+      if (!this->media_enabled_) {
+        if (s_media_state == APP_AV_MEDIA_STATE_STARTED ||
+            s_media_state == APP_AV_MEDIA_STATE_STARTING) {
+          ESP_LOGI(BT_AV_TAG, "A2DP media disabled; requesting SUSPEND");
+          const esp_err_t err = esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_SUSPEND);
+          ESP_LOGI(BT_AV_TAG, "A2DP SUSPEND request result=%s", esp_err_to_name(err));
+          s_media_state = APP_AV_MEDIA_STATE_STOPPING;
+        }
+      } else if (s_media_state == APP_AV_MEDIA_STATE_IDLE) {
         ESP_LOGW(BT_AV_TAG,
                  "A2DP-DIAG heartbeat CHECK_SRC_RDY conn_state=%d media_state=%d",
                  static_cast<int>(s_a2d_state), static_cast<int>(s_media_state));
-        esp_err_t err = esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY);
+        const esp_err_t err = esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY);
         ESP_LOGW(BT_AV_TAG, "A2DP-DIAG CHECK_SRC_RDY returned=%s", esp_err_to_name(err));
       }
       break;
@@ -1140,15 +1148,19 @@ void BluetoothA2DPSource::set_media_enabled(bool enabled) {
            static_cast<int>(enabled), static_cast<int>(s_a2d_state),
            static_cast<int>(s_media_state));
   this->media_enabled_ = enabled;
+
+  // All A2DP media-control commands must run in the Bluetooth application
+  // task, not in ESPHome's audio pipeline task. Dispatch the existing heartbeat
+  // event to run the connected-state readiness/start logic immediately.
+  // The periodic heartbeat remains the fallback if the work queue is busy.
   if (enabled) {
-    if (s_a2d_state == APP_AV_STATE_CONNECTED) {
-      esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY);
-    }
+    bt_app_work_dispatch(ccall_bt_app_av_sm_hdlr, BT_APP_HEART_BEAT_EVT,
+                         nullptr, 0, nullptr);
   } else {
-    if (s_media_state == APP_AV_MEDIA_STATE_STARTED ||
-        s_media_state == APP_AV_MEDIA_STATE_STARTING) {
-      esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_SUSPEND);
-    }
+    // SUSPEND is handled by the Bluetooth app task as well. Its heartbeat
+    // branch is extended below to process the disabled-media request.
+    bt_app_work_dispatch(ccall_bt_app_av_sm_hdlr, BT_APP_HEART_BEAT_EVT,
+                         nullptr, 0, nullptr);
   }
 }
 
