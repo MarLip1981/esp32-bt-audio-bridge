@@ -588,18 +588,6 @@ void BluetoothA2DPSource::app_a2d_callback(esp_a2d_cb_event_t event,
              static_cast<int>(param->media_ctrl_stat.cmd),
              static_cast<int>(param->media_ctrl_stat.status));
   }
-  // A playback request can arrive while Bluedroid is still completing the
-  // connection transition. set_media_enabled() records the request, but a
-  // readiness check issued too early is otherwise never retried. Re-arm the
-  // media state machine once CONNECTED arrives to avoid a permanently idle
-  // A2DP PCM pull callback and a full HA-side ring buffer.
-  if (event == ESP_A2D_CONNECTION_STATE_EVT && param != nullptr &&
-      param->conn_stat.state == ESP_A2D_CONNECTION_STATE_CONNECTED &&
-      media_enabled_) {
-    const esp_err_t err = esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY);
-    ESP_LOGW(BT_AV_TAG, "A2DP-DIAG deferred CHECK_SRC_RDY result=%s",
-             esp_err_to_name(err));
-  }
   bt_app_work_dispatch(ccall_bt_app_av_sm_hdlr, event, param,
                        sizeof(esp_a2d_cb_param_t), nullptr);
 }
