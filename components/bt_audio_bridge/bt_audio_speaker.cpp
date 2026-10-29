@@ -91,6 +91,13 @@ void BtAudioBridge::finish() {
     this->state_ = speaker::STATE_STOPPED;
     ESP_LOGI(SPEAKER_TAG, "HA audio stream FINISHED");
   } else {
+    // Short TTS clips may finish before reaching the normal prebuffer threshold.
+    // Arm A2DP here so their queued PCM is still transmitted.
+    if (!this->media_enable_requested_) {
+      this->media_enable_requested_ = true;
+      this->a2dp_source_.set_media_enabled(true);
+      ESP_LOGI(SPEAKER_TAG, "A2DP media armed for short final PCM buffer");
+    }
     this->state_ = speaker::STATE_STOPPING;
   }
 }
@@ -122,10 +129,11 @@ size_t BtAudioBridge::play(const uint8_t *data, size_t length, TickType_t ticks_
   const size_t written = this->audio_engine_.write(data, length, ticks_to_wait);
   this->pcm_received_bytes_ += static_cast<uint32_t>(length);
   this->pcm_queued_bytes_ += static_cast<uint32_t>(written);
-  if (written > 0 && !this->media_enable_requested_) {
+  if (!this->media_enable_requested_ &&
+      this->audio_engine_.available() >= STARTUP_PREBUFFER_BYTES) {
     this->media_enable_requested_ = true;
     this->a2dp_source_.set_media_enabled(true);
-    ESP_LOGI(SPEAKER_TAG, "A2DP media armed after first PCM block");
+    ESP_LOGI(SPEAKER_TAG, "A2DP media armed after PCM prebuffer");
   }
   return written;
 }
@@ -161,10 +169,11 @@ size_t BtAudioBridge::play(const uint8_t *data, size_t length) {
   const size_t written = this->audio_engine_.write(data, length);
   this->pcm_received_bytes_ += static_cast<uint32_t>(length);
   this->pcm_queued_bytes_ += static_cast<uint32_t>(written);
-  if (written > 0 && !this->media_enable_requested_) {
+  if (!this->media_enable_requested_ &&
+      this->audio_engine_.available() >= STARTUP_PREBUFFER_BYTES) {
     this->media_enable_requested_ = true;
     this->a2dp_source_.set_media_enabled(true);
-    ESP_LOGI(SPEAKER_TAG, "A2DP media armed after first PCM block");
+    ESP_LOGI(SPEAKER_TAG, "A2DP media armed after PCM prebuffer");
   }
   return written;
 }
