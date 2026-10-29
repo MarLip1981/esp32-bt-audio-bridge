@@ -754,13 +754,19 @@ void BluetoothA2DPSource::bt_app_av_state_connecting_hdlr(uint16_t event,
     }
     case ESP_A2D_AUDIO_STATE_EVT:
     case ESP_A2D_AUDIO_CFG_EVT:
-    case ESP_A2D_MEDIA_CTRL_ACK_EVT:
-      // if we got here -> we must be still connected
-      // This is called when we request to reconnect
+      // Audio/config events prove the profile is connected. Do not issue
+      // CHECK_SRC_RDY here: the periodic connected-state handler owns that
+      // request and reserves STARTING before sending it.
       s_a2d_state = APP_AV_STATE_CONNECTED;
-      if (this->media_enabled_) {
-        esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY);
-      }
+      break;
+    case ESP_A2D_MEDIA_CTRL_ACK_EVT:
+      // A media-control ACK can arrive before the connection-state event has
+      // advanced the outer state machine. Never answer an ACK with another
+      // CHECK_SRC_RDY; that creates an endless CHECK/ACK loop and exhausts
+      // Bluedroid's 4 KB SBC transmit allocation. Move to CONNECTED and let
+      // the normal media state machine consume this ACK.
+      s_a2d_state = APP_AV_STATE_CONNECTED;
+      bt_app_av_media_proc(event, param);
       break;
     case BT_APP_HEART_BEAT_EVT:
       // Keep the A2DP link alive without starting media TX while idle.
