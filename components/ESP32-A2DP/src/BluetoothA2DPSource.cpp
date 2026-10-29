@@ -956,10 +956,11 @@ void BluetoothA2DPSource::bt_app_av_media_proc(uint16_t event, void *param) {
         if (a2d != nullptr &&
             a2d->media_ctrl_stat.cmd == ESP_A2D_MEDIA_CTRL_SUSPEND &&
             a2d->media_ctrl_stat.status == ESP_A2D_MEDIA_CTRL_ACK_SUCCESS) {
-          ESP_LOGI(BT_AV_TAG, "A2DP-REF SUSPEND ACK success; disconnecting");
+          ESP_LOGI(BT_AV_TAG, "A2DP-REF SUSPEND ACK success; keeping Bluetooth connection");
+          // SUSPEND stops media transmission only. Keep the A2DP profile connected
+          // so the next HA stream can resume without tearing down the link.
           s_media_state = APP_AV_MEDIA_STATE_IDLE;
-          esp_a2d_source_disconnect(peer_bd_addr);
-          s_a2d_state = APP_AV_STATE_DISCONNECTING;
+          s_intv_cnt = 0;
         } else {
           ESP_LOGW(BT_AV_TAG, "A2DP-REF SUSPEND ACK failed; retrying");
           const esp_err_t err = esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_SUSPEND);
