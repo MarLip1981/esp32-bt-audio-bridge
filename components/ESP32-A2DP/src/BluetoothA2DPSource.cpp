@@ -831,11 +831,17 @@ void BluetoothA2DPSource::bt_app_av_state_connected_hdlr(uint16_t event,
           s_media_state = APP_AV_MEDIA_STATE_STOPPING;
         }
       } else if (s_media_state == APP_AV_MEDIA_STATE_IDLE) {
-        ESP_LOGW(BT_AV_TAG,
-                 "A2DP-DIAG heartbeat CHECK_SRC_RDY conn_state=%d media_state=%d",
-                 static_cast<int>(s_a2d_state), static_cast<int>(s_media_state));
+        // Reserve the media state before issuing CHECK_SRC_RDY. The ACK is
+        // asynchronous; leaving the state IDLE lets every heartbeat enqueue
+        // another readiness request, repeatedly allocating SBC TX buffers
+        // until the 4 KB Bluedroid allocation fails and the heap collapses.
         const esp_err_t err = esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY);
-        ESP_LOGW(BT_AV_TAG, "A2DP-DIAG CHECK_SRC_RDY returned=%s", esp_err_to_name(err));
+        if (err == ESP_OK) {
+          s_media_state = APP_AV_MEDIA_STATE_STARTING;
+          ESP_LOGI(BT_AV_TAG, "A2DP readiness check queued");
+        } else {
+          ESP_LOGW(BT_AV_TAG, "A2DP readiness check failed: %s", esp_err_to_name(err));
+        }
       }
       break;
     }
@@ -924,13 +930,24 @@ void BluetoothA2DPSource::bt_app_av_media_proc(uint16_t event, void *param) {
       if (event == ESP_A2D_MEDIA_CTRL_ACK_EVT) {
         a2d = static_cast<esp_a2d_cb_param_t *>(param);
         if (a2d != nullptr &&
-            a2d->media_ctrl_stat.cmd == ESP_A2D_MEDIA_CTRL_START &&
-            a2d->media_ctrl_stat.status == ESP_A2D_MEDIA_CTRL_ACK_SUCCESS) {
-          ESP_LOGI(BT_AV_TAG, "A2DP-REF START ACK success");
+            a2d->media_ctrl_stat.cmd == ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY) {
+          if (a2d->media_ctrl_stat.status == ESP_A2D_MEDIA_CTRL_ACK_SUCCESS) {
+            ESP_LOGI(BT_AV_TAG, "A2DP readiness ACK success; requesting START");
+            const esp_err_t err = esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_START);
+            ESP_LOGI(BT_AV_TAG, "A2DP START request result=%s", esp_err_to_name(err));
+            if (err != ESP_OK) s_media_state = APP_AV_MEDIA_STATE_IDLE;
+          } else {
+            ESP_LOGW(BT_AV_TAG, "A2DP readiness ACK failed; returning to IDLE");
+            s_media_state = APP_AV_MEDIA_STATE_IDLE;
+          }
+        } else if (a2d != nullptr &&
+                   a2d->media_ctrl_stat.cmd == ESP_A2D_MEDIA_CTRL_START &&
+                   a2d->media_ctrl_stat.status == ESP_A2D_MEDIA_CTRL_ACK_SUCCESS) {
+          ESP_LOGI(BT_AV_TAG, "A2DP START ACK success");
           s_intv_cnt = 0;
           s_media_state = APP_AV_MEDIA_STATE_STARTED;
         } else {
-          ESP_LOGW(BT_AV_TAG, "A2DP-REF START ACK failed or mismatched; returning to IDLE");
+          ESP_LOGW(BT_AV_TAG, "A2DP START ACK failed or mismatched; returning to IDLE");
           s_media_state = APP_AV_MEDIA_STATE_IDLE;
         }
       }
