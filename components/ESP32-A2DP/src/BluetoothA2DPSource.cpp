@@ -769,15 +769,14 @@ void BluetoothA2DPSource::bt_app_av_state_connecting_hdlr(uint16_t event,
       bt_app_av_media_proc(event, param);
       break;
     case BT_APP_HEART_BEAT_EVT:
-      // Keep the A2DP link alive without starting media TX while idle.
-      if (this->media_enabled_) {
-        esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY);
-      }
-      /**
-       * Switch state to APP_AV_STATE_UNCONNECTED
-       * when connecting lasts more than 2 heart beat intervals.
-       */
+      // Do not issue media-control commands while the A2DP profile is still
+      // connecting. CHECK_SRC_RDY is asynchronous; sending it from this
+      // branch can create overlapping requests and exhaust Bluedroid's heap.
+      // Let the connection-state callback advance the state machine. Only
+      // retry the connection if no connection/audio/config event arrived for
+      // two full heartbeat intervals.
       if (++s_connecting_heatbeat_count >= 2) {
+        ESP_LOGW(BT_AV_TAG, "A2DP connection timed out; returning to reconnect logic");
         s_a2d_state = APP_AV_STATE_UNCONNECTED;
         s_connecting_heatbeat_count = 0;
       }
