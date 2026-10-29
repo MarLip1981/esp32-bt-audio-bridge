@@ -41,6 +41,8 @@ class BtAudioBridgeA2DPSource : public BluetoothA2DPSource {
 class BtAudioBridge : public Component, public speaker::Speaker {
  public:
   static constexpr size_t MAX_DEVICES = 8;
+  // Start A2DP only after a short PCM prebuffer is ready (about 23 ms at 44.1 kHz stereo).
+  static constexpr size_t STARTUP_PREBUFFER_BYTES = 4096;
 
   BtAudioBridge();
   void setup() override;
